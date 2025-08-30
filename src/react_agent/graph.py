@@ -1,4 +1,4 @@
-from typing import Dict, Literal
+from typing import Dict, Literal, Iterable, Any
 from datetime import datetime, UTC
 
 from langchain_core.messages import AIMessage, SystemMessage
@@ -57,8 +57,31 @@ async def officer2(state: State, runtime: Runtime[Context]) -> Dict:
 
 # --------- Routing via tool-calls only ---------
 
-def _has_tool_call(msg: AIMessage, name: str) -> bool:
-    return any(getattr(tc, "name", "") == name for tc in (msg.tool_calls or []))
+def _iter_tool_call_names(msg: AIMessage) -> Iterable[str]:
+    """Yield tool names from various tool_call shapes (attr, dict, nested)."""
+    calls = getattr(msg, "tool_calls", None) or []
+    for tc in calls:
+        # 1) Object-like with attributes
+        name = getattr(tc, "name", None) or getattr(tc, "tool_name", None)
+        if name:
+            yield str(name)
+            continue
+        # 2) Dict-like shapes
+        if isinstance(tc, dict):
+            # common keys
+            name = tc.get("name") or tc.get("tool")
+            if name:
+                yield str(name)
+                continue
+            # nested function.name (some providers)
+            fn = tc.get("function")
+            if isinstance(fn, dict):
+                name = fn.get("name")
+                if name:
+                    yield str(name)
+
+def _has_tool_call(msg: AIMessage, expected: str) -> bool:
+    return expected in set(_iter_tool_call_names(msg))
 
 def route_captain(state: State) -> Literal["__end__", "officer1"]:
     """Captain may end or delegate to Officer1."""
@@ -102,4 +125,4 @@ builder.add_conditional_edges("officer2", route_officer2)
 # ReAct cycle for Officer2 tools
 builder.add_edge("tools", "officer2")
 
-graph = builder.compile(name="Ship-Agent")
+graph = builder.compile(name="Ship-Agent-ToolCallRouting")
