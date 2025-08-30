@@ -26,6 +26,7 @@ async def search(query: str) -> dict[str, Any] | None:
     result = await wrapped.ainvoke({"query": query})
     return cast(dict[str, Any], result)
 
+
 @tool
 def get_time() -> str:
     """Return current time in Europe/Berlin (24h)."""
@@ -44,10 +45,17 @@ def delegate_officer1() -> str:
     """Delegate the task to First Officer."""
     return "ok"
 
+
 @tool
-def delegate_officer2() -> str:
-    """Delegate the task to Second Officer."""
-    return "ok"
+def delegate_officer2(use: str, reason: str = "") -> str:
+    """
+    Delegate to Second Officer ONLY when an external tool is needed.
+    `use` must be one of: 'get_time', 'search'.
+    """
+    if use not in {"get_time", "search"}:
+        return "reject"
+    return f"ok:{use}"
+
 
 # Exports for binding by role
 DELEGATION_TOOLS_CAPTAIN: List[Callable[..., Any]] = [delegate_officer1]
