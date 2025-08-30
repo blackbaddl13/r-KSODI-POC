@@ -1,116 +1,73 @@
-"""Define a custom Reasoning and Action agent.
-
-Works with a chat model with tool calling support.
-"""
-
-from datetime import UTC, datetime
-from typing import Dict, List, Literal, cast
-
-from langchain_core.messages import AIMessage
+from typing import Dict, Literal
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.runtime import Runtime
 
 from react_agent.context import Context
-from react_agent.state import InputState, State
-from react_agent.tools import TOOLS
+from react_agent.state import State, InputState
 from react_agent.utils import load_chat_model
+from react_agent.tools import TOOLS
 
-# Define the function that calls the model
-
-
-async def call_model(
-    state: State, runtime: Runtime[Context]
-) -> Dict[str, List[AIMessage]]:
-    """Call the LLM powering our "agent".
-
-    This function prepares the prompt, initializes the model, and processes the response.
-
-    Args:
-        state (State): The current state of the conversation.
-        config (RunnableConfig): Configuration for the model run.
-
-    Returns:
-        dict: A dictionary containing the model's response message.
-    """
-    # Initialize the model with tool binding. Change the model or add more tools here.
-    model = load_chat_model(runtime.context.model).bind_tools(TOOLS)
-
-    # Format the system prompt. Customize this to change the agent's behavior.
-    system_message = runtime.context.system_prompt.format(
-        system_time=datetime.now(tz=UTC).isoformat()
-    )
-
-    # Get the model's response
-    response = cast(
-        AIMessage,
-        await model.ainvoke(
-            [{"role": "system", "content": system_message}, *state.messages]
-        ),
-    )
-
-    # Handle the case when it's the last step and the model still wants to use a tool
-    if state.is_last_step and response.tool_calls:
-        return {
-            "messages": [
-                AIMessage(
-                    id=response.id,
-                    content="Sorry, I could not find an answer to your question in the specified number of steps.",
-                )
-            ]
-        }
-
-    # Return the model's response as a list to be added to existing messages
+# --- Kapitän (GPT-4o) ---
+async def captain(state: State, runtime: Runtime[Context]) -> Dict:
+    model = load_chat_model("openai/gpt-4o-mini")
+    response = await model.ainvoke([*state.messages, HumanMessage(content=state.input)])
     return {"messages": [response]}
 
+# --- 1. Offizier (GPT-5) ---
+async def officer1(state: State, runtime: Runtime[Context]) -> Dict:
+    model = load_chat_model("openai/gpt-5")
+    response = await model.ainvoke([*state.messages])
+    return {"messages": [response]}
 
-# Define a new graph
+# --- 2. Offizier (noch frei wählbar) ---
+async def officer2(state: State, runtime: Runtime[Context]) -> Dict:
+    model = load_chat_model("openai/gpt-4o-mini")  # Platzhalter
+    response = await model.ainvoke([*state.messages])
+    return {"messages": [response]}
 
+# --- Delegation Router ---
+def delegation_response(state: State) -> Literal["captain", "officer2"]:
+    # ganz simpel: wenn "captain" im letzten Output, zurück an Kapitän
+    last = state.messages[-1].content.lower()
+    if "captain" in last:
+        return "captain"
+    return "officer2"
+
+# --- Extract JSON Response ---
+def extract_json(state: State) -> Dict:
+    text = state.messages[-1].content.strip()
+    return {"messages": [AIMessage(content=f"Extracted: {text}")]}
+
+# --- Main Switch ---
+def main_switch(state: State) -> Literal["officer1", "officer2", "extract_json"]:
+    # ganz simpel: Schlüsselwörter im Kapitäns-Output
+    last = state.messages[-1].content.lower()
+    if "off1" in last or "delegate" in last:
+        return "officer1"
+    elif "json" in last:
+        return "extract_json"
+    return "officer2"
+
+# --- Build Graph ---
 builder = StateGraph(State, input_schema=InputState, context_schema=Context)
 
-# Define the two nodes we will cycle between
-builder.add_node(call_model)
+builder.add_node("captain", captain)
+builder.add_node("officer1", officer1)
+builder.add_node("officer2", officer2)
+builder.add_node("delegation_response", delegation_response)
+builder.add_node("extract_json", extract_json)
+
+# Tools
 builder.add_node("tools", ToolNode(TOOLS))
 
-# Set the entrypoint as `call_model`
-# This means that this node is the first one called
-builder.add_edge("__start__", "call_model")
+# Edges
+builder.add_edge("__start__", "captain")
+builder.add_conditional_edges("captain", main_switch)
+builder.add_edge("officer1", "delegation_response")
+builder.add_conditional_edges("delegation_response", delegation_response)
+builder.add_edge("officer2", "officer1")
+builder.add_edge("extract_json", "__end__")
 
-
-def route_model_output(state: State) -> Literal["__end__", "tools"]:
-    """Determine the next node based on the model's output.
-
-    This function checks if the model's last message contains tool calls.
-
-    Args:
-        state (State): The current state of the conversation.
-
-    Returns:
-        str: The name of the next node to call ("__end__" or "tools").
-    """
-    last_message = state.messages[-1]
-    if not isinstance(last_message, AIMessage):
-        raise ValueError(
-            f"Expected AIMessage in output edges, but got {type(last_message).__name__}"
-        )
-    # If there is no tool call, then we finish
-    if not last_message.tool_calls:
-        return "__end__"
-    # Otherwise we execute the requested actions
-    return "tools"
-
-
-# Add a conditional edge to determine the next step after `call_model`
-builder.add_conditional_edges(
-    "call_model",
-    # After call_model finishes running, the next node(s) are scheduled
-    # based on the output from route_model_output
-    route_model_output,
-)
-
-# Add a normal edge from `tools` to `call_model`
-# This creates a cycle: after using tools, we always return to the model
-builder.add_edge("tools", "call_model")
-
-# Compile the builder into an executable graph
-graph = builder.compile(name="ReAct Agent")
+graph = builder.compile(name="KSODI-Agent")
