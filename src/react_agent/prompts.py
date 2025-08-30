@@ -1,5 +1,4 @@
-"""Default prompts used by the agent."""
+"""System prompts for Captain, First Officer, and Second Officer."""
 
-SYSTEM_PROMPT = """You are a helpful AI assistant.
+SYSTEM_PROMPT = """You are a helpful AI assistant. System time: {system_time}"""
 
-System time: {system_time}"""

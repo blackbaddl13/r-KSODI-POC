@@ -1,0 +1,68 @@
+name: Create KSODI POC Documentation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write        
+  id-token: write     
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ANTORA_PLAYBOOK: antora-playbook.yml  
+  BUILD_DIR: build                 
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (main)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Compute TAG (main-docupatch-<ts>)
+        id: tagging
+        shell: bash
+        run: |
+          set -euo pipefail
+          TS="$(date -u +%Y%m%d%H%M%S)"
+          echo "TAG=main-docupatch-${TS}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Antora + extensions
+        run: |
+          npm install -g @antora/cli @antora/site-generator @antora/lunr-extension
+
+      - name: Build Antora site
+        working-directory: docs
+        env:
+          SITE_SEARCH_PROVIDER: lunr
+        run: |
+          antora "${ANTORA_PLAYBOOK}"
+          # optional, verhindert Jekyll-Interpretation:
+          touch "../${BUILD_DIR}/.nojekyll"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ env.BUILD_DIR }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
