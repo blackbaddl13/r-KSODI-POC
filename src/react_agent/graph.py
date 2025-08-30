@@ -21,7 +21,9 @@ async def captain(state: State, runtime: Runtime[Context]) -> Dict:
     """Captain answers directly or delegates to Officer1 via tool-call."""
     model = load_chat_model("openai/gpt-4o-2024-05-13").bind_tools(DELEGATION_TOOLS_CAPTAIN)
     system = SystemMessage(
-        content=runtime.context.captain_prompt.format(system_time=datetime.now(tz=UTC).isoformat())
+        content=runtime.context.captain_prompt.format(
+            system_time=datetime.now(tz=UTC).isoformat()
+        )
     )
     response = await model.ainvoke([system, *state.messages])
     return {"messages": [response]}
@@ -29,10 +31,12 @@ async def captain(state: State, runtime: Runtime[Context]) -> Dict:
 
 # --- First Officer (GPT-5) ---
 async def officer1(state: State, runtime: Runtime[Context]) -> Dict:
-    """Officer1 solves or delegates to Officer2 via tool-call."""
+    """Officer1 solves or delegates to Officer2 via tool-call; never ends."""
     model = load_chat_model("openai/gpt-5").bind_tools(DELEGATION_TOOLS_OFFICER1)
     system = SystemMessage(
-        content=runtime.context.officer1_prompt.format(system_time=datetime.now(tz=UTC).isoformat())
+        content=runtime.context.officer1_prompt.format(
+            system_time=datetime.now(tz=UTC).isoformat()
+        )
     )
     response = await model.ainvoke([system, *state.messages])
     return {"messages": [response]}
@@ -40,10 +44,12 @@ async def officer1(state: State, runtime: Runtime[Context]) -> Dict:
 
 # --- Second Officer (GPT-5-mini, with REAL tools) ---
 async def officer2(state: State, runtime: Runtime[Context]) -> Dict:
-    """Officer2 has real tools (get_time, search)."""
+    """Officer2 uses real tools (get_time, search); never ends."""
     model = load_chat_model("openai/gpt-5-mini").bind_tools(TOOLS)
     system = SystemMessage(
-        content=runtime.context.officer2_prompt.format(system_time=datetime.now(tz=UTC).isoformat())
+        content=runtime.context.officer2_prompt.format(
+            system_time=datetime.now(tz=UTC).isoformat()
+        )
     )
     response = await model.ainvoke([system, *state.messages])
     return {"messages": [response]}
@@ -55,19 +61,21 @@ def _has_tool_call(msg: AIMessage, name: str) -> bool:
     return any(getattr(tc, "name", "") == name for tc in (msg.tool_calls or []))
 
 def route_captain(state: State) -> Literal["__end__", "officer1"]:
+    """Captain may end or delegate to Officer1."""
     last = state.messages[-1]
     if isinstance(last, AIMessage) and _has_tool_call(last, "delegate_officer1"):
         return "officer1"
     return "__end__"
 
 def route_officer1(state: State) -> Literal["captain", "officer2"]:
+    """Officer1 returns to Captain unless delegating to Officer2."""
     last = state.messages[-1]
     if isinstance(last, AIMessage) and _has_tool_call(last, "delegate_officer2"):
         return "officer2"
     return "captain"
 
 def route_officer2(state: State) -> Literal["tools", "officer1"]:
-    # Officer2 may or may not call REAL tools; if yes, execute ToolNode then loop back.
+    """Officer2 executes tools if requested, then loops; otherwise returns to Officer1."""
     last = state.messages[-1]
     if isinstance(last, AIMessage) and last.tool_calls:
         return "tools"
