@@ -1,4 +1,4 @@
-from typing import Dict, Literal, Iterable, Any
+from typing import Dict, Literal, Iterable
 from datetime import datetime, UTC
 
 from langchain_core.messages import AIMessage, SystemMessage
@@ -15,7 +15,6 @@ from react_agent.tools import (
     DELEGATION_TOOLS_OFFICER1,
 )
 
-
 # --- Captain (GPT-4o-2024-05-13) ---
 async def captain(state: State, runtime: Runtime[Context]) -> Dict:
     """Captain answers directly or delegates to Officer1 via tool-call."""
@@ -27,7 +26,6 @@ async def captain(state: State, runtime: Runtime[Context]) -> Dict:
     )
     response = await model.ainvoke([system, *state.messages])
     return {"messages": [response]}
-
 
 # --- First Officer (GPT-5) ---
 async def officer1(state: State, runtime: Runtime[Context]) -> Dict:
@@ -41,7 +39,6 @@ async def officer1(state: State, runtime: Runtime[Context]) -> Dict:
     response = await model.ainvoke([system, *state.messages])
     return {"messages": [response]}
 
-
 # --- Second Officer (GPT-5-mini, with REAL tools) ---
 async def officer2(state: State, runtime: Runtime[Context]) -> Dict:
     """Officer2 uses real tools (get_time, search); never ends."""
@@ -54,26 +51,17 @@ async def officer2(state: State, runtime: Runtime[Context]) -> Dict:
     response = await model.ainvoke([system, *state.messages])
     return {"messages": [response]}
 
-
-# --------- Routing via tool-calls only ---------
-
+# --------- Tool-call inspection (robust across shapes) ---------
 def _iter_tool_call_names(msg: AIMessage) -> Iterable[str]:
-    """Yield tool names from various tool_call shapes (attr, dict, nested)."""
     calls = getattr(msg, "tool_calls", None) or []
     for tc in calls:
-        # 1) Object-like with attributes
         name = getattr(tc, "name", None) or getattr(tc, "tool_name", None)
         if name:
-            yield str(name)
-            continue
-        # 2) Dict-like shapes
+            yield str(name); continue
         if isinstance(tc, dict):
-            # common keys
             name = tc.get("name") or tc.get("tool")
             if name:
-                yield str(name)
-                continue
-            # nested function.name (some providers)
+                yield str(name); continue
             fn = tc.get("function")
             if isinstance(fn, dict):
                 name = fn.get("name")
@@ -83,38 +71,43 @@ def _iter_tool_call_names(msg: AIMessage) -> Iterable[str]:
 def _has_tool_call(msg: AIMessage, expected: str) -> bool:
     return expected in set(_iter_tool_call_names(msg))
 
-def route_captain(state: State) -> Literal["__end__", "officer1"]:
-    """Captain may end or delegate to Officer1."""
+# --------- Routing via tool-calls only ---------
+def route_captain(state: State) -> Literal["__end__", "delegation_tools_captain"]:
+    """Captain may end or delegate (via ToolNode) to Officer1."""
     last = state.messages[-1]
     if isinstance(last, AIMessage) and _has_tool_call(last, "delegate_officer1"):
-        return "officer1"
+        # Erst Delegation-Tool ausführen, dann zu officer1
+        return "delegation_tools_captain"
     return "__end__"
 
-def route_officer1(state: State) -> Literal["captain", "officer2"]:
-    """Officer1 returns to Captain unless delegating to Officer2."""
+def route_officer1(state: State) -> Literal["captain", "delegation_tools_officer1"]:
+    """Officer1 returns to Captain unless delegating (via ToolNode) to Officer2."""
     last = state.messages[-1]
     if isinstance(last, AIMessage) and _has_tool_call(last, "delegate_officer2"):
-        return "officer2"
+        # Erst Delegation-Tool ausführen, dann zu officer2
+        return "delegation_tools_officer1"
     return "captain"
 
 def route_officer2(state: State) -> Literal["tools", "officer1"]:
-    """Officer2 executes tools if requested, then loops; otherwise returns to Officer1."""
+    """Officer2 executes real tools if requested, then loops; otherwise returns to Officer1."""
     last = state.messages[-1]
     if isinstance(last, AIMessage) and last.tool_calls:
         return "tools"
     return "officer1"
 
-
 # --------- Build Graph ---------
-
 builder = StateGraph(State, input_schema=InputState, context_schema=Context)
 
 builder.add_node("captain", captain)
 builder.add_node("officer1", officer1)
 builder.add_node("officer2", officer2)
 
-# ToolNode for REAL tools (used only by Officer2 path)
+# ToolNode for REAL tools (used by Officer2 path)
 builder.add_node("tools", ToolNode(TOOLS))
+
+# ToolNodes for Delegation (erzeugen die nötigen ToolMessages)
+builder.add_node("delegation_tools_captain", ToolNode(DELEGATION_TOOLS_CAPTAIN))
+builder.add_node("delegation_tools_officer1", ToolNode(DELEGATION_TOOLS_OFFICER1))
 
 # Flow
 builder.add_edge("__start__", "captain")
@@ -122,7 +115,11 @@ builder.add_conditional_edges("captain", route_captain)
 builder.add_conditional_edges("officer1", route_officer1)
 builder.add_conditional_edges("officer2", route_officer2)
 
+# After delegation tool execution, continue to the right officer
+builder.add_edge("delegation_tools_captain", "officer1")
+builder.add_edge("delegation_tools_officer1", "officer2")
+
 # ReAct cycle for Officer2 tools
 builder.add_edge("tools", "officer2")
 
-graph = builder.compile(name="Ship-Agent-ToolCallRouting")
+graph = builder.compile(name="Ship-Agent-DelegationToolNodes")
