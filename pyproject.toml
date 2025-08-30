@@ -16,7 +16,8 @@ dependencies = [
     "langchain-fireworks>=0.1.7",
     "python-dotenv>=1.0.1",
     "langchain-tavily>=0.1",
-    "pytz>=2024.1"
+    "pytz>=2024.1",
+    "langsmith>=0.1.99"
 ]
 
 
