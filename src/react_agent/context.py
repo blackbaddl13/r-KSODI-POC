@@ -13,19 +13,18 @@ from . import prompts
 class Context:
     """The context for the agent."""
 
+    # Legacy/global prompt (weiter verfügbar, wird aber von rollenbasierten Prompts überlagert)
     system_prompt: str = field(
         default=prompts.SYSTEM_PROMPT,
         metadata={
-            "description": "The system prompt to use for the agent's interactions. "
-            "This prompt sets the context and behavior for the agent."
+            "description": "Legacy/global system prompt. Roles below are preferred."
         },
     )
 
     model: Annotated[str, {"__template_metadata__": {"kind": "llm"}}] = field(
         default="openai/gpt-5",
         metadata={
-            "description": "The name of the language model to use for the agent's main interactions. "
-            "Should be in the form: provider/model-name."
+            "description": "The default language model (provider/model-name)."
         },
     )
 
@@ -36,11 +35,16 @@ class Context:
         },
     )
 
+    # Role-specific Prompts (all with {system_time})
+    captain_prompt: str = field(default=prompts.SYSTEM_PROMPT_CAPTAIN)
+    officer1_prompt: str = field(default=prompts.SYSTEM_PROMPT_OFFICER1)
+    officer2_prompt: str = field(default=prompts.SYSTEM_PROMPT_OFFICER2)
+
     def __post_init__(self) -> None:
         """Fetch env vars for attributes that were not passed as args."""
         for f in fields(self):
             if not f.init:
                 continue
-
-            if getattr(self, f.name) == f.default:
-                setattr(self, f.name, os.environ.get(f.name.upper(), f.default))
+            current = getattr(self, f.name)
+            if current == f.default:
+                setattr(self, f.name, os.environ.get(f.name.upper(), current))
