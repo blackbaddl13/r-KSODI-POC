@@ -9,27 +9,27 @@ from react_agent.state import State, InputState
 from react_agent.utils import load_chat_model
 from react_agent.tools import TOOLS
 
-# --- Kapitän (GPT-4o) ---
+# --- Captain (GPT-4o) ---
 async def captain(state: State, runtime: Runtime[Context]) -> Dict:
     model = load_chat_model("openai/gpt-4o-mini")
     response = await model.ainvoke([*state.messages, HumanMessage(content=state.input)])
     return {"messages": [response]}
 
-# --- 1. Offizier (GPT-5) ---
+# --- First Officer (GPT-5) ---
 async def officer1(state: State, runtime: Runtime[Context]) -> Dict:
     model = load_chat_model("openai/gpt-5")
     response = await model.ainvoke([*state.messages])
     return {"messages": [response]}
 
-# --- 2. Offizier (noch frei wählbar) ---
+# --- Second Officer (configurable) ---
 async def officer2(state: State, runtime: Runtime[Context]) -> Dict:
-    model = load_chat_model("openai/gpt-4o-mini")  # Platzhalter
+    model = load_chat_model("openai/gpt-4o-mini")  # placeholder
     response = await model.ainvoke([*state.messages])
     return {"messages": [response]}
 
 # --- Delegation Router ---
 def delegation_response(state: State) -> Literal["captain", "officer2"]:
-    # ganz simpel: wenn "captain" im letzten Output, zurück an Kapitän
+    # very simple: if "captain" in last output, route back to Captain
     last = state.messages[-1].content.lower()
     if "captain" in last:
         return "captain"
@@ -42,7 +42,7 @@ def extract_json(state: State) -> Dict:
 
 # --- Main Switch ---
 def main_switch(state: State) -> Literal["officer1", "officer2", "extract_json"]:
-    # ganz simpel: Schlüsselwörter im Kapitäns-Output
+    # very simple: keywords in the Captain's output
     last = state.messages[-1].content.lower()
     if "off1" in last or "delegate" in last:
         return "officer1"
