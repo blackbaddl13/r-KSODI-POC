@@ -1,20 +1,20 @@
-from typing import Dict, Literal, Iterable, Optional, Any
-from datetime import datetime, UTC
+"""LangGraph state machine for the Ship-Agent (Captain/Officer1/Officer2) with delegation."""
 
-from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
-from langchain_core.messages import BaseMessage  # NEW
+from datetime import UTC, datetime
+from typing import Any, Dict, Iterable, Literal, Optional
+
+from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.runtime import Runtime
-from langsmith import Client  # NEW
+from langsmith import Client
 
 from react_agent.context import Context
-from react_agent.state import State, InputState
-from react_agent.utils import load_chat_model
+from react_agent.state import InputState, State
 from react_agent.tools import (
-    TOOLS,
     DELEGATION_TOOLS_CAPTAIN,
     DELEGATION_TOOLS_OFFICER1,
+    TOOLS,
 )
 
 # --- Config: depth limit ---
@@ -24,9 +24,9 @@ MAX_DEPTH = 5
 _ls = Client()
 
 def _ls_messages(prompt_id: str, **vars) -> list[BaseMessage]:
-    """
-    Holt ChatPrompt aus LangSmith und rendert ihn zu Messages.
-    Fallback: einfache SystemMessage mit Systemzeit.
+    """Load a LangSmith ChatPrompt by id and render it to messages.
+
+    Fallback: returns a simple SystemMessage with current system time.
     """
     try:
         prompt = _ls.pull_prompt(prompt_id)         # z.B. "system_prompt_captain:latest"
@@ -38,6 +38,7 @@ def _ls_messages(prompt_id: str, **vars) -> list[BaseMessage]:
 
 # --- Captain (GPT-4o-2024-05-13) ---
 async def captain(state: State, runtime: Runtime[Context]) -> Dict:
+    """Captain step: binds delegation tools for Officer1 and produces the next AIMessage."""
     model = load_chat_model("openai/gpt-4o-2024-05-13").bind_tools(DELEGATION_TOOLS_CAPTAIN)
     sys_msgs = _ls_messages(
         runtime.context.captain_prompt_id,
@@ -49,6 +50,7 @@ async def captain(state: State, runtime: Runtime[Context]) -> Dict:
 
 # --- First Officer (GPT-5) ---
 async def officer1(state: State, runtime: Runtime[Context]) -> Dict:
+    """First Officer step: may delegate to Officer2 when external tools are needed."""
     model = load_chat_model("openai/gpt-5").bind_tools(DELEGATION_TOOLS_OFFICER1)
     sys_msgs = _ls_messages(
         runtime.context.officer1_prompt_id,
@@ -60,6 +62,7 @@ async def officer1(state: State, runtime: Runtime[Context]) -> Dict:
 
 # --- Second Officer (GPT-5-mini, with REAL tools) ---
 async def officer2(state: State, runtime: Runtime[Context]) -> Dict:
+    """Second Officer step: executes real tools (search/time) and advances the dialogue."""
     model = load_chat_model("openai/gpt-5-mini").bind_tools(TOOLS)
     sys_msgs = _ls_messages(
         runtime.context.officer2_prompt_id,
@@ -117,9 +120,9 @@ def _get_tool_call(msg: AIMessage, expected: str) -> Optional[dict]:
 
 # --------- resolve pending tool_calls when stopping ---------
 def resolve_pending(state: State) -> Dict:
-    """
-    Wenn die letzte AIMessage noch tool_calls enthält (z. B. bei Depth-Limit),
-    erzeugen wir passende ToolMessages, damit das Protokoll gültig ist.
+    """Synthesize ToolMessages for any pending tool_calls when we stop due to depth limits.
+
+    Ensures the transcript remains valid by replying to tool_calls before finalizing.
     """
     last = state.messages[-1]
     tool_msgs: list[ToolMessage] = []
@@ -139,6 +142,7 @@ def resolve_pending(state: State) -> Dict:
 
 # --------- Routing with depth limit ---------
 def route_captain(state: State) -> Literal["__end__", "delegation_tools_captain"]:
+    """Captain routing: end or delegate to Officer1 via delegation tools."""
     if state.depth >= MAX_DEPTH:
         return "__end__"
     last = state.messages[-1]
@@ -148,7 +152,7 @@ def route_captain(state: State) -> Literal["__end__", "delegation_tools_captain"
 
 
 def route_officer1(state: State) -> Literal["captain", "delegation_tools_officer1", "resolve_pending"]:
-    # Bei Limit: offene tool_calls zuerst synthetisch beantworten
+    """Officer1 routing: hand off to Officer2 only for allowed external tools."""
     if state.depth >= MAX_DEPTH:
         last = state.messages[-1]
         if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
@@ -175,6 +179,7 @@ def route_officer1(state: State) -> Literal["captain", "delegation_tools_officer
 
 
 def route_officer2(state: State) -> Literal["tools", "officer1", "resolve_pending"]:
+    """Officer2 routing: execute tools if present, otherwise return to Officer1."""
     if state.depth >= MAX_DEPTH:
         last = state.messages[-1]
         if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
