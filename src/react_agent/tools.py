@@ -1,13 +1,14 @@
-"""This module provides tools for web search, time, and delegation routing."""
+"""Tools for web search, time retrieval, and delegation routing."""
 
 from __future__ import annotations
-from typing import Any, Callable, List, Optional, cast
-from datetime import datetime
+
 import os
+from datetime import datetime
+from typing import Any, Callable, List, cast
 
 import pytz
-from langchain_tavily import TavilySearch
 from langchain_core.tools import tool
+from langchain_tavily import TavilySearch
 from langgraph.runtime import get_runtime
 
 from react_agent.context import Context
@@ -48,9 +49,9 @@ def delegate_officer1() -> str:
 
 @tool
 def delegate_officer2(use: str, reason: str = "") -> str:
-    """
-    Delegate to Second Officer ONLY when an external tool is needed.
-    `use` must be one of: 'get_time', 'search'.
+    """Delegate to Second Officer only when an external tool is needed.
+
+    `use` must be one of: ``'get_time'`` or ``'search'``.
     """
     if use not in {"get_time", "search"}:
         return "reject"
