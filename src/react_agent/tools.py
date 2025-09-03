@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 from datetime import datetime
 from typing import Any, Callable, List, cast
+from zoneinfo import ZoneInfo
 
-import pytz
 from langchain_core.tools import tool
 from langchain_tavily import TavilySearch
 from langgraph.runtime import get_runtime
@@ -30,8 +30,7 @@ async def search(query: str) -> dict[str, Any] | None:
 @tool
 def get_time() -> str:
     """Return current time in Europe/Berlin (24h)."""
-    tz = pytz.timezone("Europe/Berlin")
-    return datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d %H:%M:%S")
 
 
 # Export: real tools set for Officer2

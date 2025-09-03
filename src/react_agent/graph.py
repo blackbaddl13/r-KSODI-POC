@@ -1,7 +1,7 @@
 """LangGraph state machine for the Ship-Agent (Captain/Officer1/Officer2) with delegation."""
 
 from datetime import UTC, datetime
-from typing import Any, Dict, Iterable, Literal, Optional
+from typing import Any, Iterable, Literal, Optional
 
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
 from langgraph.graph import StateGraph
@@ -11,11 +11,7 @@ from langsmith import Client
 
 from react_agent.context import Context
 from react_agent.state import InputState, State
-from react_agent.tools import (
-    DELEGATION_TOOLS_CAPTAIN,
-    DELEGATION_TOOLS_OFFICER1,
-    TOOLS,
-)
+from react_agent.tools import DELEGATION_TOOLS_CAPTAIN, DELEGATION_TOOLS_OFFICER1, TOOLS
 from react_agent.utils import load_chat_model
 
 # --- Config: depth limit ---
@@ -24,21 +20,22 @@ MAX_DEPTH = 5
 # --- LangSmith client & helper (Prompts laden) ---
 _ls = Client()
 
-def _ls_messages(prompt_id: str, **vars) -> list[BaseMessage]:
+
+def _ls_messages(prompt_id: str, **kwargs: Any) -> list[BaseMessage]:
     """Load a LangSmith ChatPrompt by id and render it to messages.
 
     Fallback: returns a simple SystemMessage with current system time.
     """
     try:
-        prompt = _ls.pull_prompt(prompt_id)         # z.B. "system_prompt_captain:latest"
-        value = prompt.invoke(vars)                 # Variablen einsetzen (system_time=...)
-        return list(value.to_messages())            # -> [SystemMessage, ...]
+        prompt = _ls.pull_prompt(prompt_id)  # e.g., "system_prompt_captain:latest"
+        value = prompt.invoke(kwargs)        # inject variables (system_time=...)
+        return list(value.to_messages())     # -> [SystemMessage, ...]
     except Exception:
-        return [SystemMessage(content=f"System time: {vars.get('system_time','')}")]
+        return [SystemMessage(content=f"System time: {kwargs.get('system_time', '')}")]
 
 
 # --- Captain (GPT-4o-2024-05-13) ---
-async def captain(state: State, runtime: Runtime[Context]) -> Dict:
+async def captain(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     """Captain step: binds delegation tools for Officer1 and produces the next AIMessage."""
     model = load_chat_model("openai/gpt-4o-2024-05-13").bind_tools(DELEGATION_TOOLS_CAPTAIN)
     sys_msgs = _ls_messages(
@@ -50,7 +47,7 @@ async def captain(state: State, runtime: Runtime[Context]) -> Dict:
 
 
 # --- First Officer (GPT-5) ---
-async def officer1(state: State, runtime: Runtime[Context]) -> Dict:
+async def officer1(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     """First Officer step: may delegate to Officer2 when external tools are needed."""
     model = load_chat_model("openai/gpt-5").bind_tools(DELEGATION_TOOLS_OFFICER1)
     sys_msgs = _ls_messages(
@@ -62,7 +59,7 @@ async def officer1(state: State, runtime: Runtime[Context]) -> Dict:
 
 
 # --- Second Officer (GPT-5-mini, with REAL tools) ---
-async def officer2(state: State, runtime: Runtime[Context]) -> Dict:
+async def officer2(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     """Second Officer step: executes real tools (search/time) and advances the dialogue."""
     model = load_chat_model("openai/gpt-5-mini").bind_tools(TOOLS)
     sys_msgs = _ls_messages(
@@ -88,12 +85,12 @@ def _iter_tool_call_names(msg: AIMessage) -> Iterable[str]:
                 continue
             fn = tc.get("function")
             if isinstance(fn, dict):
-                name = fn.get("name")
-                if name:
-                    yield str(name)
+                name2 = fn.get("name")
+                if name2:
+                    yield str(name2)
 
 
-def _iter_tool_calls(msg: AIMessage) -> Iterable[dict]:
+def _iter_tool_calls(msg: AIMessage) -> Iterable[dict[str, Any]]:
     calls = getattr(msg, "tool_calls", None) or []
     for tc in calls:
         if isinstance(tc, dict):
@@ -112,7 +109,7 @@ def _iter_tool_calls(msg: AIMessage) -> Iterable[dict]:
             yield {"id": getattr(tc, "id", None), "name": name, "args": args}
 
 
-def _get_tool_call(msg: AIMessage, expected: str) -> Optional[dict]:
+def _get_tool_call(msg: AIMessage, expected: str) -> Optional[dict[str, Any]]:
     for tc in _iter_tool_calls(msg):
         if (tc.get("name") or "").strip() == expected:
             return tc
@@ -120,7 +117,7 @@ def _get_tool_call(msg: AIMessage, expected: str) -> Optional[dict]:
 
 
 # --------- resolve pending tool_calls when stopping ---------
-def resolve_pending(state: State) -> Dict:
+def resolve_pending(state: State) -> dict[str, Any]:
     """Synthesize ToolMessages for any pending tool_calls when we stop due to depth limits.
 
     Ensures the transcript remains valid by replying to tool_calls before finalizing.
@@ -164,16 +161,15 @@ def route_officer1(state: State) -> Literal["captain", "delegation_tools_officer
         tc = _get_tool_call(last, "delegate_officer2")
         if tc:
             args = tc.get("args") or {}
-            use = None
+            use: Optional[str] = None
             if isinstance(args, dict):
                 use = args.get("use")
-            elif isinstance(args, str):
-                if '"use"' in args:
-                    try:
-                        import json
-                        use = json.loads(args).get("use")
-                    except Exception:
-                        pass
+            elif isinstance(args, str) and '"use"' in args:
+                try:
+                    import json
+                    use = json.loads(args).get("use")
+                except Exception:
+                    pass
             if use in {"get_time", "search"}:
                 return "delegation_tools_officer1"
     return "captain"
