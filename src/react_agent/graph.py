@@ -11,12 +11,12 @@ from langsmith import Client
 
 from react_agent.context import Context
 from react_agent.state import InputState, State
-from react_agent.utils import load_chat_model
 from react_agent.tools import (
     DELEGATION_TOOLS_CAPTAIN,
     DELEGATION_TOOLS_OFFICER1,
     TOOLS,
 )
+from react_agent.utils import load_chat_model
 
 # --- Config: depth limit ---
 MAX_DEPTH = 5
