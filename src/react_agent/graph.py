@@ -34,10 +34,13 @@ def _ls_messages(prompt_id: str, **kwargs: Any) -> list[BaseMessage]:
         return [SystemMessage(content=f"System time: {kwargs.get('system_time', '')}")]
 
 
-# --- Captain (GPT-4o-2024-05-13) ---
+# --- Captain (uses context-configured model) ---
 async def captain(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     """Captain step: binds delegation tools for Officer1 and produces the next AIMessage."""
-    model = load_chat_model("openai/gpt-4o-2024-05-13").bind_tools(DELEGATION_TOOLS_CAPTAIN)
+    # Resolve node-specific model with fallback to global default
+    model_id = runtime.context.captain_model or runtime.context.model
+    model = load_chat_model(model_id).bind_tools(DELEGATION_TOOLS_CAPTAIN)
+
     sys_msgs = _ls_messages(
         runtime.context.captain_prompt_id,
         system_time=datetime.now(tz=UTC).isoformat(),
@@ -46,10 +49,13 @@ async def captain(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     return {"messages": [response], "depth": state.depth + 1}
 
 
-# --- First Officer (GPT-5) ---
+# --- First Officer (uses context-configured model) ---
 async def officer1(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     """First Officer step: may delegate to Officer2 when external tools are needed."""
-    model = load_chat_model("openai/gpt-5").bind_tools(DELEGATION_TOOLS_OFFICER1)
+    # Resolve node-specific model with fallback to global default
+    model_id = runtime.context.officer1_model or runtime.context.model
+    model = load_chat_model(model_id).bind_tools(DELEGATION_TOOLS_OFFICER1)
+
     sys_msgs = _ls_messages(
         runtime.context.officer1_prompt_id,
         system_time=datetime.now(tz=UTC).isoformat(),
@@ -58,10 +64,13 @@ async def officer1(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     return {"messages": [response], "depth": state.depth + 1}
 
 
-# --- Second Officer (GPT-5-mini, with REAL tools) ---
+# --- Second Officer (uses context-configured model, with REAL tools) ---
 async def officer2(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     """Second Officer step: executes real tools (search/time) and advances the dialogue."""
-    model = load_chat_model("openai/gpt-5-mini").bind_tools(TOOLS)
+    # Resolve node-specific model with fallback to global default
+    model_id = runtime.context.officer2_model or runtime.context.model
+    model = load_chat_model(model_id).bind_tools(TOOLS)
+
     sys_msgs = _ls_messages(
         runtime.context.officer2_prompt_id,
         system_time=datetime.now(tz=UTC).isoformat(),

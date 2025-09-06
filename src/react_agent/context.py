@@ -13,7 +13,7 @@ from . import prompts
 class Context:
     """The context for the agent."""
 
-    # Legacy/global prompt (Fallback – wird in graph.py nur genutzt, wenn LangSmith-Pull fehlschlägt)
+    # Legacy/global prompt (fallback – used only if LangSmith pull fails)
     system_prompt: str = field(
         default=prompts.SYSTEM_PROMPT,
         metadata={
@@ -21,7 +21,7 @@ class Context:
         },
     )
 
-    # LangSmith Prompt IDs (können via ENV überschrieben werden: CAPTAIN_PROMPT_ID, OFFICER1_PROMPT_ID, OFFICER2_PROMPT_ID)
+    # LangSmith prompt IDs (can be overridden via ENV: CAPTAIN_PROMPT_ID, OFFICER1_PROMPT_ID, OFFICER2_PROMPT_ID)
     captain_prompt_id: str = field(
         default="system_prompt_captain:latest",
         metadata={"description": "LangSmith prompt handle for the Captain (e.g., 'captain:latest')."},
@@ -35,9 +35,24 @@ class Context:
         metadata={"description": "LangSmith prompt handle for the Second Officer (e.g., 'officer2:latest')."},
     )
 
+    # Global default model (used if node-specific model is not set)
     model: Annotated[str, {"__template_metadata__": {"kind": "llm"}}] = field(
         default="openai/gpt-5",
         metadata={"description": "The default language model (provider/model-name)."},
+    )
+
+    # Node-specific default models (overrides global default if set)
+    captain_model: Annotated[str, {"__template_metadata__": {"kind": "llm"}}] = field(
+        default="openai/gpt-4o-2024-05-13",
+        metadata={"description": "Default model for the Captain node (overrides global if set)."},
+    )
+    officer1_model: Annotated[str, {"__template_metadata__": {"kind": "llm"}}] = field(
+        default="openai/gpt-5",
+        metadata={"description": "Default model for the First Officer node (overrides global if set)."},
+    )
+    officer2_model: Annotated[str, {"__template_metadata__": {"kind": "llm"}}] = field(
+        default="openai/gpt-5-mini",
+        metadata={"description": "Default model for the Second Officer node (overrides global if set)."},
     )
 
     max_search_results: int = field(
@@ -46,7 +61,7 @@ class Context:
     )
 
     def __post_init__(self) -> None:
-        """Fetch env vars for attributes that were not passed as args (uppercased field names)."""
+        """Fetch ENV vars for attributes that were not passed as args (priority: ENV > Studio > default)."""
         for f in fields(self):
             if not f.init:
                 continue
