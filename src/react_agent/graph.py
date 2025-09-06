@@ -14,10 +14,16 @@ from react_agent.state import InputState, State
 from react_agent.tools import DELEGATION_TOOLS_CAPTAIN, DELEGATION_TOOLS_OFFICER1, TOOLS
 from react_agent.utils import load_chat_model
 
-# --- Config: depth limit ---
-MAX_DEPTH = 25  # default; will be overridden at runtime from Context.max_depth
+# --- Config: depth limit (default; synced from Context.max_depth on first captain) ---
+MAX_DEPTH: int = 25
 
-# --- LangSmith client & helper (Prompts laden) ---
+# --- Conversation loop caps (synced from Context if present; checked against State counters) ---
+# Captain <-> Officer1
+MAX_C1_LOOPS: int = 3
+# Officer1 <-> Officer2
+MAX_O1O2_LOOPS: int = 2
+
+# --- LangSmith client & helper ---
 _ls = Client()
 
 
@@ -34,16 +40,24 @@ def _ls_messages(prompt_id: str, **kwargs: Any) -> list[BaseMessage]:
         return [SystemMessage(content=f"System time: {kwargs.get('system_time', '')}")]
 
 
+# --- Captain (uses context-configured model) ---
 async def captain(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     """Captain step: binds delegation tools for Officer1 and produces the next AIMessage."""
-    # Sync global depth limit from runtime context once per run (fallback to module default).
+    # Sync depth and loop caps from runtime context once per run (fallback to module defaults).
     try:
         md = int(getattr(runtime.context, "max_depth", 0))
         if md > 0:
             global MAX_DEPTH
             MAX_DEPTH = md
     except Exception:
-        # Keep module-level default on any parse/typing issues
+        pass
+    try:
+        global MAX_C1_LOOPS, MAX_O1O2_LOOPS
+        c1_cap = int(getattr(runtime.context, "max_captain_officer1", MAX_C1_LOOPS))
+        o1o2_cap = int(getattr(runtime.context, "max_officer1_officer2", MAX_O1O2_LOOPS))
+        MAX_C1_LOOPS = c1_cap if c1_cap >= 0 else MAX_C1_LOOPS
+        MAX_O1O2_LOOPS = o1o2_cap if o1o2_cap >= 0 else MAX_O1O2_LOOPS
+    except Exception:
         pass
 
     # Resolve node-specific model with fallback to global default
@@ -72,8 +86,12 @@ async def officer1(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
         runtime.context.officer1_prompt_id,
         system_time=datetime.now(tz=UTC).isoformat(),
     )
+
+    # Increment Captain<->Officer1 loop counter because we just delegated to Officer1
+    new_c1 = getattr(state, "c1_loops", 0) + 1
+
     response = await model.ainvoke([*sys_msgs, *state.messages])
-    return {"messages": [response], "depth": state.depth + 1}
+    return {"messages": [response], "depth": state.depth + 1, "c1_loops": new_c1}
 
 
 # --- Second Officer (uses context-configured model, with REAL tools) ---
@@ -87,8 +105,12 @@ async def officer2(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
         runtime.context.officer2_prompt_id,
         system_time=datetime.now(tz=UTC).isoformat(),
     )
+
+    # Increment Officer1<->Officer2 loop counter because we just delegated to Officer2
+    new_o1o2 = getattr(state, "o1o2_loops", 0) + 1
+
     response = await model.ainvoke([*sys_msgs, *state.messages])
-    return {"messages": [response], "depth": state.depth + 1}
+    return {"messages": [response], "depth": state.depth + 1, "o1o2_loops": new_o1o2}
 
 
 # --------- Tool-call inspection (robust across shapes) ---------
@@ -155,15 +177,20 @@ def resolve_pending(state: State) -> dict[str, Any]:
                     content=f"Skipped '{name}' due to recursion limit (MAX_DEPTH={MAX_DEPTH}).",
                 )
             )
-    # kein depth++ hier, da kein Model-Schritt
+    # no depth++ here, since no model step
     return {"messages": tool_msgs, "depth": state.depth}
 
 
-# --------- Routing with depth limit ---------
+# --------- Routing with depth + loop caps ---------
 def route_captain(state: State) -> Literal["__end__", "delegation_tools_captain"]:
     """Captain routing: end or delegate to Officer1 via delegation tools."""
     if state.depth >= MAX_DEPTH:
         return "__end__"
+
+    # Respect max loop cap for Captain <-> Officer1
+    if getattr(state, "c1_loops", 0) >= MAX_C1_LOOPS:
+        return "__end__"
+
     last = state.messages[-1]
     if isinstance(last, AIMessage) and _get_tool_call(last, "delegate_officer1"):
         return "delegation_tools_captain"
@@ -177,6 +204,11 @@ def route_officer1(state: State) -> Literal["captain", "delegation_tools_officer
         if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
             return "resolve_pending"
         return "captain"
+
+    # Respect max loop cap for Officer1 <-> Officer2
+    if getattr(state, "o1o2_loops", 0) >= MAX_O1O2_LOOPS:
+        return "captain"
+
     last = state.messages[-1]
     if isinstance(last, AIMessage):
         tc = _get_tool_call(last, "delegate_officer2")
@@ -230,7 +262,7 @@ builder.add_conditional_edges("officer2", route_officer2)
 
 builder.add_edge("delegation_tools_captain", "officer1")
 builder.add_edge("delegation_tools_officer1", "officer2")
-builder.add_edge("resolve_pending", "captain")  # nach synthetic replies finalisiert Captain
+builder.add_edge("resolve_pending", "captain")  # after synthetic replies captain finalizes
 builder.add_edge("tools", "officer2")
 
 graph = builder.compile(name="Ship-Agent-DelegationToolNodes")

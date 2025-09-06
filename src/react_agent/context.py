@@ -13,6 +13,20 @@ from . import prompts
 class Context:
     """The context for the agent."""
 
+    # Conversation loop limits (max exchanges between nodes)
+    max_captain_officer1: int = field(
+        default=3,
+        metadata={
+            "description": "Maximum Captain↔Officer1 exchanges allowed."
+        },
+    )
+    max_officer1_officer2: int = field(
+        default=2,
+        metadata={
+            "description": "Maximum Officer1↔Officer2 exchanges allowed."
+        },
+    )
+
     # Maximum recursion depth (assistant steps before stopping).
     max_depth: int = field(
         default=25,
