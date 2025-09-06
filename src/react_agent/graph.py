@@ -15,7 +15,7 @@ from react_agent.tools import DELEGATION_TOOLS_CAPTAIN, DELEGATION_TOOLS_OFFICER
 from react_agent.utils import load_chat_model
 
 # --- Config: depth limit ---
-MAX_DEPTH = 5
+MAX_DEPTH = 25  # default; will be overridden at runtime from Context.max_depth
 
 # --- LangSmith client & helper (Prompts laden) ---
 _ls = Client()
@@ -34,17 +34,29 @@ def _ls_messages(prompt_id: str, **kwargs: Any) -> list[BaseMessage]:
         return [SystemMessage(content=f"System time: {kwargs.get('system_time', '')}")]
 
 
-# --- Captain (uses context-configured model) ---
 async def captain(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     """Captain step: binds delegation tools for Officer1 and produces the next AIMessage."""
+    # Sync global depth limit from runtime context once per run (fallback to module default).
+    try:
+        md = int(getattr(runtime.context, "max_depth", 0))
+        if md > 0:
+            global MAX_DEPTH
+            MAX_DEPTH = md
+    except Exception:
+        # Keep module-level default on any parse/typing issues
+        pass
+
     # Resolve node-specific model with fallback to global default
     model_id = runtime.context.captain_model or runtime.context.model
     model = load_chat_model(model_id).bind_tools(DELEGATION_TOOLS_CAPTAIN)
 
+    # Pull system messages via LangSmith prompt handle
     sys_msgs = _ls_messages(
         runtime.context.captain_prompt_id,
         system_time=datetime.now(tz=UTC).isoformat(),
     )
+
+    # Invoke the model and advance depth
     response = await model.ainvoke([*sys_msgs, *state.messages])
     return {"messages": [response], "depth": state.depth + 1}
 

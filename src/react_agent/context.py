@@ -13,6 +13,14 @@ from . import prompts
 class Context:
     """The context for the agent."""
 
+    # Maximum recursion depth (assistant steps before stopping).
+    max_depth: int = field(
+        default=25,
+        metadata={
+            "description": "Maximum recursion depth per thread (assistant steps before stopping)."
+        },
+    )
+
     # Legacy/global prompt (fallback – used only if LangSmith pull fails)
     system_prompt: str = field(
         default=prompts.SYSTEM_PROMPT,
