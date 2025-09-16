@@ -3,7 +3,13 @@
 from datetime import UTC, datetime
 from typing import Any, Iterable, Literal, Optional
 
-from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    SystemMessage,
+    ToolMessage,
+    HumanMessage,
+)
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
 from langgraph.runtime import Runtime
@@ -40,6 +46,20 @@ def _ls_messages(prompt_id: str, **kwargs: Any) -> list[BaseMessage]:
         return [SystemMessage(content=f"System time: {kwargs.get('system_time', '')}")]
 
 
+def _ls_messages_multi(prompt_ids: str, **kwargs: Any) -> list[BaseMessage]:
+    """Load one or more LangSmith ChatPrompts from a CSV handle list and concatenate their messages.
+
+    Example: "firstOfficer:latest, firstOfficerAddition:latest, firstOfficerEmotions:1.0"
+    """
+    handles = [h.strip() for h in (prompt_ids or "").split(",") if h.strip()]
+    msgs: list[BaseMessage] = []
+    if not handles:
+        return [SystemMessage(content=f"System time: {kwargs.get('system_time', '')}")]
+    for h in handles:
+        msgs.extend(_ls_messages(h, **kwargs))
+    return msgs
+
+
 # --- Captain (uses context-configured model) ---
 async def captain(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     """Captain step: binds delegation tools for Officer1 and produces the next AIMessage."""
@@ -60,19 +80,37 @@ async def captain(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     except Exception:
         pass
 
+    # --- Soft-Reset der Zähler zu Beginn eines neuen Human-Turns ---
+    base_depth = state.depth
+    base_c1 = getattr(state, "c1_loops", 0)
+    base_o1o2 = getattr(state, "o1o2_loops", 0)
+    try:
+        last_msg = state.messages[-1] if state.messages else None
+        if isinstance(last_msg, HumanMessage):
+            base_depth = 0
+            base_c1 = 0
+            base_o1o2 = 0
+    except Exception:
+        pass
+
     # Resolve node-specific model with fallback to global default
     model_id = runtime.context.captain_model or runtime.context.model
     model = load_chat_model(model_id).bind_tools(DELEGATION_TOOLS_CAPTAIN)
 
-    # Pull system messages via LangSmith prompt handle
-    sys_msgs = _ls_messages(
+    # Pull (evtl. gestückelte) system messages via LangSmith prompt handles
+    sys_msgs = _ls_messages_multi(
         runtime.context.captain_prompt_id,
         system_time=datetime.now(tz=UTC).isoformat(),
     )
 
-    # Invoke the model and advance depth
+    # Invoke the model
     response = await model.ainvoke([*sys_msgs, *state.messages])
-    return {"messages": [response], "depth": state.depth + 1}
+    return {
+        "messages": [response],
+        "depth": base_depth + 1,
+        "c1_loops": base_c1,
+        "o1o2_loops": base_o1o2,
+    }
 
 
 # --- First Officer (uses context-configured model) ---
@@ -82,7 +120,7 @@ async def officer1(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     model_id = runtime.context.officer1_model or runtime.context.model
     model = load_chat_model(model_id).bind_tools(DELEGATION_TOOLS_OFFICER1)
 
-    sys_msgs = _ls_messages(
+    sys_msgs = _ls_messages_multi(
         runtime.context.officer1_prompt_id,
         system_time=datetime.now(tz=UTC).isoformat(),
     )
@@ -101,7 +139,7 @@ async def officer2(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     model_id = runtime.context.officer2_model or runtime.context.model
     model = load_chat_model(model_id).bind_tools(TOOLS)
 
-    sys_msgs = _ls_messages(
+    sys_msgs = _ls_messages_multi(
         runtime.context.officer2_prompt_id,
         system_time=datetime.now(tz=UTC).isoformat(),
     )
@@ -161,7 +199,7 @@ def _get_tool_call(msg: AIMessage, expected: str) -> Optional[dict[str, Any]]:
 
 # --------- resolve pending tool_calls when stopping ---------
 def resolve_pending(state: State) -> dict[str, Any]:
-    """Synthesize ToolMessages for any pending tool_calls when we stop due to depth limits.
+    """Synthesize ToolMessages for any pending tool_calls when we stop due to a limit.
 
     Ensures the transcript remains valid by replying to tool_calls before finalizing.
     """
@@ -174,7 +212,7 @@ def resolve_pending(state: State) -> dict[str, Any]:
             tool_msgs.append(
                 ToolMessage(
                     tool_call_id=str(tc_id),
-                    content=f"Skipped '{name}' due to recursion limit (MAX_DEPTH={MAX_DEPTH}).",
+                    content="Skipped '{}' due to limit reached (depth or loop cap).".format(name),
                 )
             )
     # no depth++ here, since no model step
@@ -182,13 +220,20 @@ def resolve_pending(state: State) -> dict[str, Any]:
 
 
 # --------- Routing with depth + loop caps ---------
-def route_captain(state: State) -> Literal["__end__", "delegation_tools_captain"]:
+def route_captain(state: State) -> Literal["__end__", "delegation_tools_captain", "resolve_pending"]:
     """Captain routing: end or delegate to Officer1 via delegation tools."""
+    # Depth cap
     if state.depth >= MAX_DEPTH:
+        last = state.messages[-1]
+        if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
+            return "resolve_pending"
         return "__end__"
 
-    # Respect max loop cap for Captain <-> Officer1
+    # Loop cap for Captain <-> Officer1
     if getattr(state, "c1_loops", 0) >= MAX_C1_LOOPS:
+        last = state.messages[-1]
+        if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
+            return "resolve_pending"
         return "__end__"
 
     last = state.messages[-1]
@@ -207,6 +252,9 @@ def route_officer1(state: State) -> Literal["captain", "delegation_tools_officer
 
     # Respect max loop cap for Officer1 <-> Officer2
     if getattr(state, "o1o2_loops", 0) >= MAX_O1O2_LOOPS:
+        last = state.messages[-1]
+        if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
+            return "resolve_pending"
         return "captain"
 
     last = state.messages[-1]
