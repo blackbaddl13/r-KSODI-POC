@@ -5,19 +5,17 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-    
+  pages: write        # für actions/deploy-pages
+  id-token: write     # für OIDC bei deploy-pages
+
 concurrency:
   group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  ANTORA_PLAYBOOK: docs/antora-playbook.yml   # anpassen falls anders
-  BUILD_DIR: build
-  name: github-pages
-  url: ${{ steps.deployment.outputs.page_url }}
-    
+  ANTORA_PLAYBOOK: docs/site.yml   # anpassen falls anders
+  BUILD_DIR: build                 # Antora-Output
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -46,10 +44,12 @@ jobs:
           npm install -g @antora/cli @antora/site-generator @antora/lunr-extension
 
       - name: Build Antora site
+        working-directory: docs
         env:
           SITE_SEARCH_PROVIDER: lunr
         run: |
           antora "${ANTORA_PLAYBOOK}"
+          # optional, verhindert Jekyll-Interpretation:
           touch "${BUILD_DIR}/.nojekyll"
 
       - name: Upload Pages artifact
@@ -57,9 +57,16 @@ jobs:
         with:
           path: ${{ env.BUILD_DIR }}
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
         with:
+          # commit message für die Pages-Historie (optional)
           commit-message: "deploy: ${{ needs.build.outputs.TAG || 'main-docupatch' }}"
-
