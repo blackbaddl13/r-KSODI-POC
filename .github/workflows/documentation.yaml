@@ -5,16 +5,15 @@ on:
 
 permissions:
   contents: read
-  pages: write        # für actions/deploy-pages
-  id-token: write     # für OIDC bei deploy-pages
-
+  pages: write        
+  id-token: write     
 concurrency:
   group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  ANTORA_PLAYBOOK: docs/site.yml   # anpassen falls anders
-  BUILD_DIR: build                 # Antora-Output
+  ANTORA_PLAYBOOK: antora-playbook.yml  
+  BUILD_DIR: build                 
 
 jobs:
   build:
@@ -68,5 +67,4 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
         with:
-          # commit message für die Pages-Historie (optional)
           commit-message: "deploy: ${{ needs.build.outputs.TAG || 'main-docupatch' }}"
