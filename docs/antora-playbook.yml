@@ -1,7 +1,7 @@
 site:
   title: KSODI POC Documentation
   url: 
-  start_page: CloudStack::index.adoc
+  start_page: KSODI::index.adoc
   
 content:
   sources:
