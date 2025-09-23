@@ -49,7 +49,7 @@ jobs:
         run: |
           antora "${ANTORA_PLAYBOOK}"
           # optional, verhindert Jekyll-Interpretation:
-          touch "${BUILD_DIR}/.nojekyll"
+          touch "../${BUILD_DIR}/.nojekyll"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
