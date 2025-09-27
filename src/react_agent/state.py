@@ -28,6 +28,4 @@ class State(InputState):
     depth: int = field(default=0)
 
     # --- loop counters for conversation limits ---
-    c1_loops: int = 0        # Captain ↔ Officer1 exchanges seen
-    o1o2_loops: int = 0      # Officer1 ↔ Officer2 exchanges seen
-
+    c1_loops: int = 0        # Phase ↔ Forge exchanges seen

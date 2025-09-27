@@ -13,13 +13,12 @@ from langgraph.runtime import get_runtime
 
 from react_agent.context import Context
 
-# --------- Real tools (used by Officer2) ---------
+# --------- Real tools (used by Forge) ---------
 
 @tool
 async def search(query: str) -> dict[str, Any] | None:
     """Search the web (Tavily). Best for fresh/current info."""
     if not os.getenv("TAVILY_API_KEY"):
-        # Fail soft so the agent can continue without crashing
         return {"error": "TAVILY_API_KEY not set"}
     runtime = get_runtime(Context)
     wrapped = TavilySearch(max_results=runtime.context.max_search_results)
@@ -33,29 +32,17 @@ def get_time() -> str:
     return datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d %H:%M:%S")
 
 
-# Export: real tools set for Officer2
+# Export: real tools set (Forge binds these directly)
 TOOLS: List[Callable[..., Any]] = [search, get_time]
 
 
-# --------- Delegation tools (routing via tool-calls) ---------
+# --------- Delegation tools (Phase -> Forge) ---------
 
 @tool
-def delegate_officer1() -> str:
-    """Delegate the task to First Officer."""
+def delegate_phase_to_forge() -> str:
+    """Delegate the task to Forge."""
     return "ok"
 
 
-@tool
-def delegate_officer2(use: str, reason: str = "") -> str:
-    """Delegate to Second Officer only when an external tool is needed.
-
-    `use` must be one of: ``'get_time'`` or ``'search'``.
-    """
-    if use not in {"get_time", "search"}:
-        return "reject"
-    return f"ok:{use}"
-
-
 # Exports for binding by role
-DELEGATION_TOOLS_CAPTAIN: List[Callable[..., Any]] = [delegate_officer1]
-DELEGATION_TOOLS_OFFICER1: List[Callable[..., Any]] = [delegate_officer2]
+DELEGATION_TOOLS_PHASE: List[Callable[..., Any]] = [delegate_phase_to_forge]
