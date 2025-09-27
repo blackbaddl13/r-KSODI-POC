@@ -14,67 +14,47 @@ class Context:
     """The context for the agent."""
 
     # Conversation loop limits (max exchanges between nodes)
-    max_captain_officer1: int = field(
+    max_phase_forge: int = field(
         default=3,
-        metadata={
-            "description": "Maximum Captain↔Officer1 exchanges allowed."
-        },
-    )
-    max_officer1_officer2: int = field(
-        default=2,
-        metadata={
-            "description": "Maximum Officer1↔Officer2 exchanges allowed."
-        },
+        metadata={"description": "Maximum Phase↔Forge exchanges allowed."},
     )
 
-    # Maximum recursion depth (assistant steps before stopping).
+    # Maximum recursion depth
     max_depth: int = field(
         default=25,
-        metadata={
-            "description": "Maximum recursion depth per thread (assistant steps before stopping)."
-        },
+        metadata={"description": "Maximum recursion depth per thread (assistant steps before stopping)."},
     )
 
-    # Legacy/global prompt (fallback – used only if LangSmith pull fails)
+    # Legacy/global prompt (fallback)
     system_prompt: str = field(
         default=prompts.SYSTEM_PROMPT,
-        metadata={
-            "description": "Legacy/global system prompt. Role-specific prompts are loaded from LangSmith."
-        },
+        metadata={"description": "Legacy/global system prompt. Role-specific prompts are loaded from LangSmith."},
     )
 
-    # LangSmith prompt IDs (can be overridden via ENV: CAPTAIN_PROMPT_ID, OFFICER1_PROMPT_ID, OFFICER2_PROMPT_ID)
-    captain_prompt_id: str = field(
-        default="system_prompt_captain:latest",
-        metadata={"description": "LangSmith prompt handle for the Captain (e.g., 'captain:latest')."},
+    # LangSmith prompt IDs
+    phase_prompt_id: str = field(
+        default="system_prompt_phase:latest",
+        metadata={"description": "LangSmith prompt handle for Phase."},
     )
-    officer1_prompt_id: str = field(
-        default="system_prompt_officer1:latest",
-        metadata={"description": "LangSmith prompt handle for the First Officer (e.g., 'officer1:latest')."},
-    )
-    officer2_prompt_id: str = field(
-        default="system_prompt_officer2:latest",
-        metadata={"description": "LangSmith prompt handle for the Second Officer (e.g., 'officer2:latest')."},
+    forge_prompt_id: str = field(
+        default="system_prompt_forge:latest",
+        metadata={"description": "LangSmith prompt handle for Forge."},
     )
 
-    # Global default model (used if node-specific model is not set)
+    # Global default model
     model: Annotated[str, {"__template_metadata__": {"kind": "llm"}}] = field(
         default="openai/gpt-5",
         metadata={"description": "The default language model (provider/model-name)."},
     )
 
-    # Node-specific default models (overrides global default if set)
-    captain_model: Annotated[str, {"__template_metadata__": {"kind": "llm"}}] = field(
+    # Node-specific default models
+    phase_model: Annotated[str, {"__template_metadata__": {"kind": "llm"}}] = field(
         default="openai/gpt-4o-2024-05-13",
-        metadata={"description": "Default model for the Captain node (overrides global if set)."},
+        metadata={"description": "Default model for the Phase node (overrides global if set)."},
     )
-    officer1_model: Annotated[str, {"__template_metadata__": {"kind": "llm"}}] = field(
+    forge_model: Annotated[str, {"__template_metadata__": {"kind": "llm"}}] = field(
         default="openai/gpt-5",
-        metadata={"description": "Default model for the First Officer node (overrides global if set)."},
-    )
-    officer2_model: Annotated[str, {"__template_metadata__": {"kind": "llm"}}] = field(
-        default="openai/gpt-5-mini",
-        metadata={"description": "Default model for the Second Officer node (overrides global if set)."},
+        metadata={"description": "Default model for the Forge node (overrides global if set)."},
     )
 
     max_search_results: int = field(
