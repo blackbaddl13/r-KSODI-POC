@@ -44,5 +44,12 @@ def delegate_phase_to_forge() -> str:
     return "ok"
 
 
+@tool
+def handoff_to_phase() -> str:
+    """Hand control back to Phase after tools are done."""
+    return "ok"
+
+
 # Exports for binding by role
 DELEGATION_TOOLS_PHASE: List[Callable[..., Any]] = [delegate_phase_to_forge]
+DELEGATION_TOOLS_FORGE: List[Callable[..., Any]] = [handoff_to_phase]

@@ -17,7 +17,7 @@ from langsmith import Client
 
 from react_agent.context import Context
 from react_agent.state import InputState, State
-from react_agent.tools import DELEGATION_TOOLS_PHASE, TOOLS
+from react_agent.tools import DELEGATION_TOOLS_PHASE, DELEGATION_TOOLS_FORGE, TOOLS
 from react_agent.utils import load_chat_model
 
 # --- Config: depth limit (default; synced from Context.max_depth on first Phase step) ---
@@ -88,12 +88,28 @@ async def phase(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     )
 
     response = await model.ainvoke([*sys_msgs, *state.messages])
+    try:
+        response.name = "phase"
+    except Exception:
+        pass
     return {"messages": [response], "depth": base_depth + 1, "c1_loops": base_pf}
 
 
-# --- Forge (execution node; binds REAL tools) ---
+# --- Forge (execution node; binds REAL tools + official Tool-Handoff) ---
 async def forge(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     """Forge step: executes real tools (search/time) and advances the dialogue."""
+    from langchain_core.messages import ToolMessage, AIMessage
+
+    last = state.messages[-1] if state.messages else None
+    if isinstance(last, ToolMessage):
+        handoff_call = AIMessage(
+            content="",  
+            name="forge",
+            tool_calls=[{"name": "handoff_to_phase", "args": {}}],
+            additional_kwargs={"invisible": True, "handoff": True},
+        )
+        return {"messages": [handoff_call], "depth": state.depth + 1, "c1_loops": state.c1_loops}
+
     model_id = runtime.context.forge_model or runtime.context.model
     model = load_chat_model(model_id).bind_tools(TOOLS)
 
@@ -105,6 +121,17 @@ async def forge(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     new_pf = getattr(state, "c1_loops", 0) + 1  # reuse counter
 
     response = await model.ainvoke([*sys_msgs, *state.messages])
+
+    try:
+        response.name = "forge"
+        response.content = ""  
+        response.additional_kwargs = {
+            **getattr(response, "additional_kwargs", {}),
+            "invisible": True
+        }
+    except Exception:
+        pass
+
     return {"messages": [response], "depth": state.depth + 1, "c1_loops": new_pf}
 
 
@@ -132,8 +159,11 @@ def _iter_tool_calls(msg: AIMessage) -> Iterable[dict[str, Any]]:
     calls = getattr(msg, "tool_calls", None) or []
     for tc in calls:
         if isinstance(tc, dict):
-            yield {"id": tc.get("id"), "name": tc.get("name") or tc.get("tool"),
-                   "args": tc.get("args") or tc.get("function", {}).get("arguments")}
+            yield {
+                "id": tc.get("id"),
+                "name": tc.get("name") or tc.get("tool"),
+                "args": tc.get("args") or tc.get("function", {}).get("arguments"),
+            }
         else:
             name = getattr(tc, "name", None) or getattr(tc, "tool_name", None)
             args: Any = getattr(tc, "args", None) or {}
@@ -183,15 +213,18 @@ def route_phase(state: State) -> Literal["__end__", "delegation_tools_phase", "r
     return "__end__"
 
 
-def route_forge(state: State) -> Literal["tools", "phase", "resolve_pending"]:
+def route_forge(state: State) -> Literal["tools", "delegation_tools_forge", "phase", "resolve_pending"]:
     if state.depth >= MAX_DEPTH:
         last = state.messages[-1]
         if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
             return "resolve_pending"
         return "phase"
     last = state.messages[-1]
-    if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
-        return "tools"
+    if isinstance(last, AIMessage):
+        if getattr(last, "tool_calls", None):
+            if _get_tool_call(last, "handoff_to_phase"):
+                return "delegation_tools_forge"
+            return "tools"
     return "phase"
 
 
@@ -203,6 +236,7 @@ builder.add_node("forge", forge)
 
 builder.add_node("tools", ToolNode(TOOLS))
 builder.add_node("delegation_tools_phase", ToolNode(DELEGATION_TOOLS_PHASE))
+builder.add_node("delegation_tools_forge", ToolNode(DELEGATION_TOOLS_FORGE)) 
 builder.add_node("resolve_pending", resolve_pending)
 
 builder.add_edge("__start__", "phase")
@@ -210,6 +244,7 @@ builder.add_conditional_edges("phase", route_phase)
 builder.add_conditional_edges("forge", route_forge)
 
 builder.add_edge("delegation_tools_phase", "forge")
+builder.add_edge("delegation_tools_forge", "phase")  
 builder.add_edge("resolve_pending", "phase")
 builder.add_edge("tools", "forge")
 
