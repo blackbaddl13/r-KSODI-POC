@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 from typing import Any, Iterable, Literal, Optional
+from uuid import uuid4  # <- Fix: for tool_call ids
 
 from langchain_core.messages import (
     AIMessage,
@@ -103,9 +104,13 @@ async def forge(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     last = state.messages[-1] if state.messages else None
     if isinstance(last, ToolMessage):
         handoff_call = AIMessage(
-            content="",  
+            content="",
             name="forge",
-            tool_calls=[{"name": "handoff_to_phase", "args": {}}],
+            tool_calls=[{
+                "id": f"call_{uuid4().hex}",
+                "name": "handoff_to_phase",
+                "args": {}
+            }],
             additional_kwargs={"invisible": True, "handoff": True},
         )
         return {"messages": [handoff_call], "depth": state.depth + 1, "c1_loops": state.c1_loops}
@@ -124,7 +129,7 @@ async def forge(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
 
     try:
         response.name = "forge"
-        response.content = ""  
+        response.content = "" 
         response.additional_kwargs = {
             **getattr(response, "additional_kwargs", {}),
             "invisible": True
@@ -165,7 +170,7 @@ def _iter_tool_calls(msg: AIMessage) -> Iterable[dict[str, Any]]:
                 "args": tc.get("args") or tc.get("function", {}).get("arguments"),
             }
         else:
-            name = getattr(tc, "name", None) or getattr(tc, "tool_name", None)
+            name = getattr(tc, "name", None) or tc.get("tool_name", None)  # type: ignore[attr-defined]
             args: Any = getattr(tc, "args", None) or {}
             fn = getattr(tc, "function", None)
             if isinstance(fn, dict):
@@ -236,7 +241,7 @@ builder.add_node("forge", forge)
 
 builder.add_node("tools", ToolNode(TOOLS))
 builder.add_node("delegation_tools_phase", ToolNode(DELEGATION_TOOLS_PHASE))
-builder.add_node("delegation_tools_forge", ToolNode(DELEGATION_TOOLS_FORGE)) 
+builder.add_node("delegation_tools_forge", ToolNode(DELEGATION_TOOLS_FORGE))
 builder.add_node("resolve_pending", resolve_pending)
 
 builder.add_edge("__start__", "phase")
@@ -244,7 +249,7 @@ builder.add_conditional_edges("phase", route_phase)
 builder.add_conditional_edges("forge", route_forge)
 
 builder.add_edge("delegation_tools_phase", "forge")
-builder.add_edge("delegation_tools_forge", "phase")  
+builder.add_edge("delegation_tools_forge", "phase")
 builder.add_edge("resolve_pending", "phase")
 builder.add_edge("tools", "forge")
 
