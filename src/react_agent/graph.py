@@ -96,19 +96,31 @@ async def phase(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     return {"messages": [response], "depth": base_depth + 1, "c1_loops": base_pf}
 
 
-# --- Forge (execution node; binds REAL tools + official Tool-Handoff) ---
+# --- Forge (execution node; REAL tools + post-tool synthesis + official handoff) ---
 async def forge(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
-    """Forge step: executes real tools (search/time) and advances the dialogue."""
+    """Forge step: executes real tools (search/time). After tool results, synthesize and handoff to Phase."""
     from langchain_core.messages import ToolMessage, AIMessage
 
     last = state.messages[-1] if state.messages else None
     if isinstance(last, ToolMessage):
-        # WICHTIG: Nur bei *echten* Tool-Ergebnissen (search/get_time) sofort Hand-off.
-        # Nach dem Delegations-Tool (delegate_phase_to_forge) soll Forge *erst jetzt* denken/Tools rufen.
         real_tool_names = {"search", "get_time"}
-        if (getattr(last, "name", "") or "").strip() in real_tool_names:
-            handoff_call = AIMessage(
-                content="",
+        last_tool = (getattr(last, "name", "") or "").strip()
+        if last_tool in real_tool_names:
+            model_id = runtime.context.forge_model or runtime.context.model
+            summarizer = load_chat_model(model_id) 
+            sys_msgs = _ls_messages_multi(
+                runtime.context.forge_prompt_id,
+                system_time=datetime.now(tz=UTC).isoformat(),
+            )
+            synth = await summarizer.ainvoke([*sys_msgs, *state.messages])
+
+            try:
+                content = synth.content if isinstance(synth.content, str) else str(synth.content)
+            except Exception:
+                content = ""
+
+            handoff_msg = AIMessage(
+                content=content, 
                 name="forge",
                 tool_calls=[{
                     "id": f"call_{uuid4().hex}",
@@ -117,7 +129,7 @@ async def forge(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
                 }],
                 additional_kwargs={"invisible": True, "handoff": True},
             )
-            return {"messages": [handoff_call], "depth": state.depth + 1, "c1_loops": state.c1_loops}
+            return {"messages": [handoff_msg], "depth": state.depth + 1, "c1_loops": state.c1_loops}
 
     model_id = runtime.context.forge_model or runtime.context.model
     model = load_chat_model(model_id).bind_tools(TOOLS)
@@ -133,18 +145,10 @@ async def forge(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
 
     try:
         response.name = "forge"
-        if getattr(response, "tool_calls", None):
-            response.content = ""
-            response.additional_kwargs = {
-                **getattr(response, "additional_kwargs", {}),
-                "invisible": True
-            }
-        else:
-            response.additional_kwargs = {
-                **getattr(response, "additional_kwargs", {}),
-                "invisible": True,
-                "handoff": True
-            }
+        response.additional_kwargs = {
+            **getattr(response, "additional_kwargs", {}),
+            "invisible": True
+        }
     except Exception:
         pass
 
