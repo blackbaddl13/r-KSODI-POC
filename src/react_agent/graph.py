@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 from typing import Any, Iterable, Literal, Optional
-from uuid import uuid4  # <- Fix: for tool_call ids
+from uuid import uuid4  # for tool_call ids
 
 from langchain_core.messages import (
     AIMessage,
@@ -103,17 +103,21 @@ async def forge(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
 
     last = state.messages[-1] if state.messages else None
     if isinstance(last, ToolMessage):
-        handoff_call = AIMessage(
-            content="",
-            name="forge",
-            tool_calls=[{
-                "id": f"call_{uuid4().hex}",
-                "name": "handoff_to_phase",
-                "args": {}
-            }],
-            additional_kwargs={"invisible": True, "handoff": True},
-        )
-        return {"messages": [handoff_call], "depth": state.depth + 1, "c1_loops": state.c1_loops}
+        # WICHTIG: Nur bei *echten* Tool-Ergebnissen (search/get_time) sofort Hand-off.
+        # Nach dem Delegations-Tool (delegate_phase_to_forge) soll Forge *erst jetzt* denken/Tools rufen.
+        real_tool_names = {"search", "get_time"}
+        if (getattr(last, "name", "") or "").strip() in real_tool_names:
+            handoff_call = AIMessage(
+                content="",
+                name="forge",
+                tool_calls=[{
+                    "id": f"call_{uuid4().hex}",
+                    "name": "handoff_to_phase",
+                    "args": {}
+                }],
+                additional_kwargs={"invisible": True, "handoff": True},
+            )
+            return {"messages": [handoff_call], "depth": state.depth + 1, "c1_loops": state.c1_loops}
 
     model_id = runtime.context.forge_model or runtime.context.model
     model = load_chat_model(model_id).bind_tools(TOOLS)
@@ -129,11 +133,18 @@ async def forge(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
 
     try:
         response.name = "forge"
-        response.content = "" 
-        response.additional_kwargs = {
-            **getattr(response, "additional_kwargs", {}),
-            "invisible": True
-        }
+        if getattr(response, "tool_calls", None):
+            response.content = ""
+            response.additional_kwargs = {
+                **getattr(response, "additional_kwargs", {}),
+                "invisible": True
+            }
+        else:
+            response.additional_kwargs = {
+                **getattr(response, "additional_kwargs", {}),
+                "invisible": True,
+                "handoff": True
+            }
     except Exception:
         pass
 
