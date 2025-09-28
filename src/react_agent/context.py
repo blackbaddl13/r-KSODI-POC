@@ -33,11 +33,11 @@ class Context:
 
     # LangSmith prompt IDs
     phase_prompt_id: str = field(
-        default="system_prompt_phase:latest",
+        default="ksodi_light_ethics:latest, role_definition_phase:latest, interaction_protocol_phase:latest, personalization_ksodi_light:latest",
         metadata={"description": "LangSmith prompt handle for Phase."},
     )
     forge_prompt_id: str = field(
-        default="system_prompt_forge:latest",
+        default="ksodi_light_ethics:latest, role_definition_forge:latest, interaction_protocol_forge:latest, personalization_ksodi_light:latest",
         metadata={"description": "LangSmith prompt handle for Forge."},
     )
 
@@ -60,6 +60,21 @@ class Context:
     max_search_results: int = field(
         default=10,
         metadata={"description": "The maximum number of search results to return for each search query."},
+    )
+
+    # Personalization / Prompt Vars
+    ai_name: str = field(
+        default="AI",
+        metadata={"description": "Name the AI should be called by (used in prompts as {ai_name})."},
+    )
+    ai_language: str = field(
+        default="English",
+        metadata={"description": "Fallback language hint for prompts (used as {ai_language})."},
+    )
+
+    ai_role: str = field(
+        default="Personal assistant",
+        metadata={"description": "Fallback role hint for prompts (used as {ai_role})."},
     )
 
     def __post_init__(self) -> None:

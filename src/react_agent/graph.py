@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 from typing import Any, Iterable, Literal, Optional
-from uuid import uuid4  # for tool_call ids
+from uuid import uuid4
 
 from langchain_core.messages import (
     AIMessage,
@@ -86,6 +86,9 @@ async def phase(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     sys_msgs = _ls_messages_multi(
         runtime.context.phase_prompt_id,
         system_time=datetime.now(tz=UTC).isoformat(),
+        ai_name=getattr(runtime.context, "ai_name", "AI"),
+        ai_language=getattr(runtime.context, "ai_language", "English"),
+        ai_role=getattr(runtime.context, "ai_role", "Personal assistant"),
     )
 
     response = await model.ainvoke([*sys_msgs, *state.messages])
@@ -107,10 +110,13 @@ async def forge(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
         last_tool = (getattr(last, "name", "") or "").strip()
         if last_tool in real_tool_names:
             model_id = runtime.context.forge_model or runtime.context.model
-            summarizer = load_chat_model(model_id) 
+            summarizer = load_chat_model(model_id)
             sys_msgs = _ls_messages_multi(
                 runtime.context.forge_prompt_id,
                 system_time=datetime.now(tz=UTC).isoformat(),
+                ai_name=getattr(runtime.context, "ai_name", "AI"),
+                ai_language=getattr(runtime.context, "ai_language", "English"),
+                ai_role=getattr(runtime.context, "ai_role", "Personal assistant"),
             )
             synth = await summarizer.ainvoke([*sys_msgs, *state.messages])
 
@@ -120,7 +126,7 @@ async def forge(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
                 content = ""
 
             handoff_msg = AIMessage(
-                content=content, 
+                content=content,
                 name="forge",
                 tool_calls=[{
                     "id": f"call_{uuid4().hex}",
@@ -137,6 +143,9 @@ async def forge(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
     sys_msgs = _ls_messages_multi(
         runtime.context.forge_prompt_id,
         system_time=datetime.now(tz=UTC).isoformat(),
+        ai_name=getattr(runtime.context, "ai_name", "AI"),
+        ai_language=getattr(runtime.context, "ai_language", "English"),
+        ai_role=getattr(runtime.context, "ai_role", "Personal assistant"),
     )
 
     new_pf = getattr(state, "c1_loops", 0) + 1  # reuse counter
