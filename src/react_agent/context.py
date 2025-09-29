@@ -73,7 +73,7 @@ class Context:
     )
 
     ai_role: str = field(
-        default="Personal assistant",
+        default="",
         metadata={"description": "Fallback role hint for prompts (used as {ai_role})."},
     )
 

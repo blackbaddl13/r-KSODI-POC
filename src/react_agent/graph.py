@@ -88,7 +88,7 @@ async def phase(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
         system_time=datetime.now(tz=UTC).isoformat(),
         ai_name=getattr(runtime.context, "ai_name", "AI"),
         ai_language=getattr(runtime.context, "ai_language", "English"),
-        ai_role=getattr(runtime.context, "ai_role", "Personal assistant"),
+        ai_role=getattr(runtime.context, "ai_role", ""),
     )
 
     response = await model.ainvoke([*sys_msgs, *state.messages])
@@ -116,7 +116,7 @@ async def forge(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
                 system_time=datetime.now(tz=UTC).isoformat(),
                 ai_name=getattr(runtime.context, "ai_name", "AI"),
                 ai_language=getattr(runtime.context, "ai_language", "English"),
-                ai_role=getattr(runtime.context, "ai_role", "Personal assistant"),
+                ai_role=getattr(runtime.context, "ai_role", ""),
             )
             synth = await summarizer.ainvoke([*sys_msgs, *state.messages])
 
@@ -145,7 +145,7 @@ async def forge(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
         system_time=datetime.now(tz=UTC).isoformat(),
         ai_name=getattr(runtime.context, "ai_name", "AI"),
         ai_language=getattr(runtime.context, "ai_language", "English"),
-        ai_role=getattr(runtime.context, "ai_role", "Personal assistant"),
+        ai_role=getattr(runtime.context, "ai_role", ""),
     )
 
     new_pf = getattr(state, "c1_loops", 0) + 1  # reuse counter
