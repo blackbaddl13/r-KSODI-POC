@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Tools for web search, time retrieval, and delegation routing."""
 
 from __future__ import annotations

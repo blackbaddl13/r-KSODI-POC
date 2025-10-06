@@ -1,11 +1,12 @@
+# SPDX-License-Identifier: MIT
 """Utility & helper functions."""
 
-from typing import Tuple
+from typing import Tuple, Any
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 
-# Ensure OpenAI returns usage/token metrics.
+# Use native OpenAI wrapper to ensure usage + streaming.
 try:
     from langchain_openai import ChatOpenAI
 except Exception:
@@ -25,12 +26,19 @@ def get_message_text(msg: BaseMessage) -> str:
     return "".join(parts).strip()
 
 
-def load_chat_model(fully_specified_name: str) -> BaseChatModel:
-    """Load 'provider/model'; for OpenAI use stream_usage=True."""
+def load_chat_model(fully_specified_name: str, **kwargs: Any) -> BaseChatModel:
+    """
+    Load 'provider/model'.
+    For OpenAI: stream_usage=True and optional streaming=True passthrough.
+    """
     provider, model = _split_provider_model(fully_specified_name)
+    streaming = bool(kwargs.get("streaming", False))
+
     if provider == "openai" and ChatOpenAI is not None:
-        return ChatOpenAI(model=model, stream_usage=True)
-    return init_chat_model(model, model_provider=provider)
+        return ChatOpenAI(model=model, stream_usage=True, streaming=streaming)
+
+    # Other providers via init_chat_model; forward extra kwargs if supported.
+    return init_chat_model(model, model_provider=provider, **{k: v for k, v in kwargs.items() if k != "streaming"})
 
 
 def _split_provider_model(name: str) -> Tuple[str, str]:

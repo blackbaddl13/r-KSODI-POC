@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Define the configurable parameters for the agent."""
 
 from __future__ import annotations
