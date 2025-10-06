@@ -15,13 +15,12 @@ from langchain_core.messages import (
 )
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
-from langgraph.runtime import Runtime
 from langsmith import Client
 
 from react_agent.context import Context
 from react_agent.state import InputState, State
 from react_agent.tools import DELEGATION_TOOLS_PHASE, DELEGATION_TOOLS_FORGE, TOOLS
-from react_agent.utils import load_chat_model, get_message_text, strip_messages 
+from react_agent.utils import load_chat_model, get_message_text, strip_messages
 
 # Limits (synced from Context at runtime)
 MAX_DEPTH: int = 25
@@ -29,45 +28,47 @@ MAX_PHASE_FORGE_LOOPS: int = 3
 
 _ls = Client()
 
+# --- LangSmith prompt pull + strip (cached) ---
 @lru_cache(maxsize=64)
 def _pull_prompt_cached(prompt_id: str):
     return _ls.pull_prompt(prompt_id)
 
 def _ls_messages(prompt_id: str, **kwargs: Any) -> list[BaseMessage]:
-    """Pull a single prompt from LangSmith and strip meta headers."""
+    """Pull one LangSmith prompt, render with kwargs, strip meta headers."""
     try:
         prompt = _pull_prompt_cached(prompt_id)
         value = prompt.invoke(kwargs)
-        msgs = list(value.to_messages())
-        return strip_messages(msgs) 
+        return strip_messages(list(value.to_messages()))
     except Exception:
         return [SystemMessage(content=f"System time: {kwargs.get('system_time', '')}")]
 
 def _ls_messages_multi(prompt_ids: str, **kwargs: Any) -> list[BaseMessage]:
-    """Pull and merge multiple prompt handles (comma-separated)."""
+    """Comma-separated handles → merged messages (stripped)."""
     handles = [h.strip() for h in (prompt_ids or "").split(",") if h.strip()]
     if not handles:
         return [SystemMessage(content=f"System time: {kwargs.get('system_time', '')}")]
     msgs: list[BaseMessage] = []
     for h in handles:
         msgs.extend(_ls_messages(h, **kwargs))
-    return strip_messages(msgs) 
+    return strip_messages(msgs)  # idempotent
 
-# --------- Phase (streaming) ---------
-async def phase(state: State, runtime: Runtime[Context]):
-    """Stream assistant tokens for TTFT."""
-    # sync limits
+# --- Phase (streaming; TTFT) ---
+async def phase(state: State, *, context: Optional[Context] = None, **_):
+    """Stream assistant tokens for TTFT; context is kw-only and optional."""
+    ctx = context or Context()  # fallback loads ENV via __post_init__
+
+    # sync limits from Context
     try:
-        md = int(getattr(runtime.context, "max_depth", 0))
-        if md > 0:
+        if int(ctx.max_depth) > 0:
             global MAX_DEPTH
-            MAX_DEPTH = md
+            MAX_DEPTH = int(ctx.max_depth)
     except Exception:
         pass
     try:
         global MAX_PHASE_FORGE_LOOPS
-        cap = int(getattr(runtime.context, "max_phase_forge", MAX_PHASE_FORGE_LOOPS))
-        MAX_PHASE_FORGE_LOOPS = cap if cap >= 0 else MAX_PHASE_FORGE_LOOPS
+        cap = int(ctx.max_phase_forge)
+        if cap >= 0:
+            MAX_PHASE_FORGE_LOOPS = cap
     except Exception:
         pass
 
@@ -82,15 +83,15 @@ async def phase(state: State, runtime: Runtime[Context]):
     except Exception:
         pass
 
-    model_id = runtime.context.phase_model or runtime.context.model
+    model_id = ctx.phase_model or ctx.model
     model = load_chat_model(model_id, streaming=True).bind_tools(DELEGATION_TOOLS_PHASE)
 
     sys_msgs = _ls_messages_multi(
-        runtime.context.phase_prompt_id,
+        ctx.phase_prompt_id,
         system_time=datetime.now(tz=UTC).isoformat(),
-        ai_name=getattr(runtime.context, "ai_name", "AI"),
-        ai_language=getattr(runtime.context, "ai_language", "English"),
-        ai_role=getattr(runtime.context, "ai_role", ""),
+        ai_name=ctx.ai_name,
+        ai_language=ctx.ai_language,
+        ai_role=ctx.ai_role,
     )
 
     async for chunk in model.astream([*sys_msgs, *state.messages]):
@@ -100,24 +101,25 @@ async def phase(state: State, runtime: Runtime[Context]):
             pass
         yield {"messages": [chunk], "depth": base_depth + 1, "c1_loops": base_pf}
 
-# --------- Forge (streaming + handoff) ---------
-async def forge(state: State, runtime: Runtime[Context]):
-    """Execute tools and stream assistant tokens; after real tools, synthesize and handoff."""
+# --- Forge (streaming + handoff) ---
+async def forge(state: State, *, context: Optional[Context] = None, **_):
+    """Execute tools and stream; after real tools, synthesize and handoff."""
+    ctx = context or Context()
     last = state.messages[-1] if state.messages else None
 
-    # Post-tool synthesis path
+    # Post-tool synthesis path (only for "real" tools)
     if isinstance(last, ToolMessage):
         real_tool_names = {"search", "get_time"}
         last_tool = (getattr(last, "name", "") or "").strip()
         if last_tool in real_tool_names:
-            model_id = runtime.context.forge_model or runtime.context.model
+            model_id = ctx.forge_model or ctx.model
             summarizer = load_chat_model(model_id, streaming=True)
             sys_msgs = _ls_messages_multi(
-                runtime.context.forge_prompt_id,
+                ctx.forge_prompt_id,
                 system_time=datetime.now(tz=UTC).isoformat(),
-                ai_name=getattr(runtime.context, "ai_name", "AI"),
-                ai_language=getattr(runtime.context, "ai_language", "English"),
-                ai_role=getattr(runtime.context, "ai_role", ""),
+                ai_name=ctx.ai_name,
+                ai_language=ctx.ai_language,
+                ai_role=ctx.ai_role,
             )
 
             final_text: list[str] = []
@@ -137,15 +139,15 @@ async def forge(state: State, runtime: Runtime[Context]):
             return
 
     # Normal forge (tools + streaming)
-    model_id = runtime.context.forge_model or runtime.context.model
+    model_id = ctx.forge_model or ctx.model
     model = load_chat_model(model_id, streaming=True).bind_tools(TOOLS)
 
     sys_msgs = _ls_messages_multi(
-        runtime.context.forge_prompt_id,
+        ctx.forge_prompt_id,
         system_time=datetime.now(tz=UTC).isoformat(),
-        ai_name=getattr(runtime.context, "ai_name", "AI"),
-        ai_language=getattr(runtime.context, "ai_language", "English"),
-        ai_role=getattr(runtime.context, "ai_role", ""),
+        ai_name=ctx.ai_name,
+        ai_language=ctx.ai_language,
+        ai_role=ctx.ai_role,
     )
 
     new_pf = getattr(state, "c1_loops", 0) + 1
@@ -158,7 +160,7 @@ async def forge(state: State, runtime: Runtime[Context]):
             pass
         yield {"messages": [chunk], "depth": state.depth + 1, "c1_loops": new_pf}
 
-# --------- Tool-call inspection ---------
+# --- Tool-call inspection (unchanged helpers) ---
 def _iter_tool_call_names(msg: AIMessage) -> Iterable[str]:
     calls = getattr(msg, "tool_calls", None) or []
     for tc in calls:
@@ -209,7 +211,7 @@ def resolve_pending(state: State) -> dict[str, Any]:
                                          content=f"Skipped '{name}' due to limit reached (depth or loop cap)."))
     return {"messages": tool_msgs, "depth": state.depth}
 
-# --------- Routing ---------
+# --- Routing ---
 def route_phase(state: State) -> Literal["__end__", "delegation_tools_phase", "resolve_pending"]:
     if state.depth >= MAX_DEPTH:
         last = state.messages[-1]
@@ -240,7 +242,7 @@ def route_forge(state: State) -> Literal["tools", "delegation_tools_forge", "pha
             return "tools"
     return "phase"
 
-# --------- Build Graph ---------
+# --- Build Graph ---
 builder = StateGraph(State, input_schema=InputState, context_schema=Context)
 builder.add_node("phase", phase)
 builder.add_node("forge", forge)
