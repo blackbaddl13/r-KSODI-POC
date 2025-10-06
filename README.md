@@ -1,3 +1,19 @@
+[cc-by]: http://creativecommons.org/licenses/by/4.0/
+[cc-by-image]: https://i.creativecommons.org/l/by/4.0/88x31.png
+[cc-by-shield]: https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg
+[mit]: https://opensource.org/licenses/MIT
+[mit-shield]: https://img.shields.io/badge/License-MIT-yellow.svg
+
+[![MIT License][mit-shield]][mit]  
+<br>
+The source code is licensed under an [MIT License][mit].
+
+
+[![CC BY 4.0][cc-by-image]][cc-by]
+<br>
+The prompts are licensed under a [Creative Commons Attribution 4.0 International License][cc-by].
+
+
 # KSODI-Light Agent
 
 ## 🧭 Introduction
@@ -8,9 +24,13 @@ This implementation, referred to as **KSODI Light**, focuses solely on the *sema
 
 Nonetheless, it can be tested as a standalone prototype to validate agent behavior, resonance handling, and symbolic navigation.
 
+> Big thanks to [@Alkiri-dAraion](https://github.com/Alkiri-dAraion) for resonating early and building together
+
+
+
 > ⚠️ Please note: this is a **prototype**, offered without warranty. See roadmap for future plans and integrations.
 
----
+
 
 ## 🚀 Usage / Getting Started
 
