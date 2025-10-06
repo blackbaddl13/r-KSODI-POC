@@ -269,12 +269,12 @@ They enable shared navigation in uncertain or recursive dialogues.
 [x] Coding langgraph agent
 [x] Manual Testing
 [x] Setting up evaluations and experiments
-[ ] Publish sanitized n8n workflow for demo reasons
-[ ] Final testing and validation
-[ ] Publishing test results
-[ ] Moving to Assistant API — this is a prototype, too expensive still
-[ ] Symbolic guide implementation as front end
-[ ] Technical Measurements for KSOCI Dimensions as described in [https://github.com/Alkiri-dAraion/KSODI-Methode/blob/main/EN/CSOCI-dimensions-EN_v02.md](https://github.com/Alkiri-dAraion/KSODI-Methode/blob/main/EN/CSOCI-dimensions-EN_v02.md) — The source code of this will not be open sourced but the results will be.
+[] Publish sanitized n8n workflow for demo reasons
+[] Final testing and validation
+[] Publishing test results
+[] Moving to Assistant API — this is a prototype, too expensive still
+[] Symbolic guide implementation as front end
+[] Technical Measurements for KSOCI Dimensions as described in [https://github.com/Alkiri-dAraion/KSODI-Methode/blob/main/EN/CSOCI-dimensions-EN_v02.md](https://github.com/Alkiri-dAraion/KSODI-Methode/blob/main/EN/CSOCI-dimensions-EN_v02.md) — The source code of this will not be open sourced but the results will be.
 
 ## License
 
