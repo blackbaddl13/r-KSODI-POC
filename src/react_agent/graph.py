@@ -21,7 +21,7 @@ from langsmith import Client
 from react_agent.context import Context
 from react_agent.state import InputState, State
 from react_agent.tools import DELEGATION_TOOLS_PHASE, DELEGATION_TOOLS_FORGE, TOOLS
-from react_agent.utils import load_chat_model, get_message_text
+from react_agent.utils import load_chat_model, get_message_text, strip_messages 
 
 # Limits (synced from Context at runtime)
 MAX_DEPTH: int = 25
@@ -34,22 +34,24 @@ def _pull_prompt_cached(prompt_id: str):
     return _ls.pull_prompt(prompt_id)
 
 def _ls_messages(prompt_id: str, **kwargs: Any) -> list[BaseMessage]:
+    """Pull a single prompt from LangSmith and strip meta headers."""
     try:
         prompt = _pull_prompt_cached(prompt_id)
         value = prompt.invoke(kwargs)
-        return list(value.to_messages())
+        msgs = list(value.to_messages())
+        return strip_messages(msgs) 
     except Exception:
         return [SystemMessage(content=f"System time: {kwargs.get('system_time', '')}")]
 
 def _ls_messages_multi(prompt_ids: str, **kwargs: Any) -> list[BaseMessage]:
+    """Pull and merge multiple prompt handles (comma-separated)."""
     handles = [h.strip() for h in (prompt_ids or "").split(",") if h.strip()]
     if not handles:
         return [SystemMessage(content=f"System time: {kwargs.get('system_time', '')}")]
     msgs: list[BaseMessage] = []
     for h in handles:
         msgs.extend(_ls_messages(h, **kwargs))
-    return msgs
-
+    return strip_messages(msgs) 
 
 # --------- Phase (streaming) ---------
 async def phase(state: State, runtime: Runtime[Context]):
@@ -97,7 +99,6 @@ async def phase(state: State, runtime: Runtime[Context]):
         except Exception:
             pass
         yield {"messages": [chunk], "depth": base_depth + 1, "c1_loops": base_pf}
-
 
 # --------- Forge (streaming + handoff) ---------
 async def forge(state: State, runtime: Runtime[Context]):
@@ -157,7 +158,6 @@ async def forge(state: State, runtime: Runtime[Context]):
             pass
         yield {"messages": [chunk], "depth": state.depth + 1, "c1_loops": new_pf}
 
-
 # --------- Tool-call inspection ---------
 def _iter_tool_call_names(msg: AIMessage) -> Iterable[str]:
     calls = getattr(msg, "tool_calls", None) or []
@@ -209,7 +209,6 @@ def resolve_pending(state: State) -> dict[str, Any]:
                                          content=f"Skipped '{name}' due to limit reached (depth or loop cap)."))
     return {"messages": tool_msgs, "depth": state.depth}
 
-
 # --------- Routing ---------
 def route_phase(state: State) -> Literal["__end__", "delegation_tools_phase", "resolve_pending"]:
     if state.depth >= MAX_DEPTH:
@@ -240,7 +239,6 @@ def route_forge(state: State) -> Literal["tools", "delegation_tools_forge", "pha
                 return "delegation_tools_forge"
             return "tools"
     return "phase"
-
 
 # --------- Build Graph ---------
 builder = StateGraph(State, input_schema=InputState, context_schema=Context)
