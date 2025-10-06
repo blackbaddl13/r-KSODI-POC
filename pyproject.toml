@@ -10,16 +10,20 @@ license = { text = "MIT" }
 requires-python = ">=3.11,<4.0"
 dependencies = [
     "langgraph>=0.6.0,<0.7.0",
-    "langchain-openai>=0.1.22",
-    "langchain-anthropic>=0.1.23",
-    "langchain>=0.2.14",
-    "langchain-fireworks>=0.1.7",
+    # Ensure usage/token metrics path is stable
+    "langchain-openai>=0.2.0,<0.3",
+    "langchain-anthropic>=0.1.23,<0.2",
+    "langchain>=0.2.14,<0.3",
+    "langchain-fireworks>=0.1.7,<0.2",
     "python-dotenv>=1.0.1",
     "langchain-tavily>=0.1",
     "pytz>=2024.1",
-    "langsmith>=0.1.99"
+    # Keep SDK stable across Studio images
+    "langsmith>=0.1.99,<0.2",
+    # Required for correct token accounting
+    "tiktoken>=0.7.0",
+    "openai>=1.40.0,<2",
 ]
-
 
 [project.optional-dependencies]
 dev = ["mypy>=1.11.1", "ruff>=0.6.1"]
@@ -30,10 +34,10 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages = ["langgraph.templates.react_agent", "react_agent"]
+
 [tool.setuptools.package-dir]
 "langgraph.templates.react_agent" = "src/react_agent"
 "react_agent" = "src/react_agent"
-
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
@@ -51,14 +55,14 @@ lint.select = [
 lint.ignore = [
     "UP006",
     "UP007",
-    # We actually do want to import from typing_extensions
     "UP035",
-    # Relax the convention by _not_ requiring documentation for every function parameter.
     "D417",
     "E501",
 ]
+
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D", "UP"]
+
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
