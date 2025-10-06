@@ -33,17 +33,17 @@ class Context:
 
     # LangSmith prompt IDs
     phase_prompt_id: str = field(
-        default="ksodi_light_ethics:latest, role_definition_phase:latest, interaction_protocol_phase:latest, personalization_ksodi_light:latest",
+        default="blackbaddl13/ksodi_light_ethics:DXB, blackbaddl13/role_definition_phase:DXB, blackbaddl13/glyphs_ksodi_light:DXB, blackbaddl13/interaction_protocol_phase:DXB, blackbaddl13/resonance_saturation_ksodi_light:DXB, blackbaddl13/resonance_role_phase_ksodi_light:DXB, blackbaddl13/personalization_ksodi_light:DXB",
         metadata={"description": "LangSmith prompt handle for Phase."},
     )
     forge_prompt_id: str = field(
-        default="ksodi_light_ethics:latest, role_definition_forge:latest, interaction_protocol_forge:latest, personalization_ksodi_light:latest",
+        default="blackbaddl13/ksodi_light_ethics:DXB, blackbaddl13/role_definition_forge:DXB, blackbaddl13/glyphs_ksodi_light:DXB, blackbaddl13/interaction_protocol_forge:DXB, blackbaddl13/resonance_saturation_ksodi_light:DXB, blackbaddl13/resonance_role_forge_ksodi_light:DXB, blackbaddl13/personalization_ksodi_light:DXB",
         metadata={"description": "LangSmith prompt handle for Forge."},
     )
 
     # Global default model
     model: Annotated[str, {"__template_metadata__": {"kind": "llm"}}] = field(
-        default="openai/gpt-5",
+        default="openai/gpt-4o-2024-05-13",
         metadata={"description": "The default language model (provider/model-name)."},
     )
 
