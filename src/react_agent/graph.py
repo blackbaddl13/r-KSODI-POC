@@ -15,6 +15,7 @@ from langchain_core.messages import (
 )
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
+from langgraph.runtime import Runtime
 from langsmith import Client
 
 from react_agent.context import Context
@@ -31,6 +32,7 @@ _ls = Client()
 # --- LangSmith prompt pull + strip (cached) ---
 @lru_cache(maxsize=64)
 def _pull_prompt_cached(prompt_id: str):
+    """Cache LangSmith prompt pulls to reduce API latency."""
     return _ls.pull_prompt(prompt_id)
 
 def _ls_messages(prompt_id: str, **kwargs: Any) -> list[BaseMessage]:
@@ -52,23 +54,21 @@ def _ls_messages_multi(prompt_ids: str, **kwargs: Any) -> list[BaseMessage]:
         msgs.extend(_ls_messages(h, **kwargs))
     return strip_messages(msgs)  # idempotent
 
-# --- Phase (streaming; TTFT) ---
-async def phase(state: State, *, context: Optional[Context] = None, **_):
-    """Stream assistant tokens for TTFT; context is kw-only and optional."""
-    ctx = context or Context()  # fallback loads ENV via __post_init__
-
-    # sync limits from Context
+# --- Phase (non-streaming; safe TTFT-off) ---
+async def phase(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
+    """Bind delegation tools and produce the next AIMessage (single step)."""
+    # sync limits
     try:
-        if int(ctx.max_depth) > 0:
+        md = int(getattr(runtime.context, "max_depth", 0))
+        if md > 0:
             global MAX_DEPTH
-            MAX_DEPTH = int(ctx.max_depth)
+            MAX_DEPTH = md
     except Exception:
         pass
     try:
         global MAX_PHASE_FORGE_LOOPS
-        cap = int(ctx.max_phase_forge)
-        if cap >= 0:
-            MAX_PHASE_FORGE_LOOPS = cap
+        cap = int(getattr(runtime.context, "max_phase_forge", MAX_PHASE_FORGE_LOOPS))
+        MAX_PHASE_FORGE_LOOPS = cap if cap >= 0 else MAX_PHASE_FORGE_LOOPS
     except Exception:
         pass
 
@@ -83,82 +83,76 @@ async def phase(state: State, *, context: Optional[Context] = None, **_):
     except Exception:
         pass
 
-    model_id = ctx.phase_model or ctx.model
-    model = load_chat_model(model_id, streaming=True).bind_tools(DELEGATION_TOOLS_PHASE)
+    model_id = runtime.context.phase_model or runtime.context.model
+    model = load_chat_model(model_id).bind_tools(DELEGATION_TOOLS_PHASE)
 
     sys_msgs = _ls_messages_multi(
-        ctx.phase_prompt_id,
+        runtime.context.phase_prompt_id,
         system_time=datetime.now(tz=UTC).isoformat(),
-        ai_name=ctx.ai_name,
-        ai_language=ctx.ai_language,
-        ai_role=ctx.ai_role,
+        ai_name=getattr(runtime.context, "ai_name", "AI"),
+        ai_language=getattr(runtime.context, "ai_language", "English"),
+        ai_role=getattr(runtime.context, "ai_role", ""),
     )
 
-    async for chunk in model.astream([*sys_msgs, *state.messages]):
-        try:
-            chunk.name = "phase"
-        except Exception:
-            pass
-        yield {"messages": [chunk], "depth": base_depth + 1, "c1_loops": base_pf}
+    resp = await model.ainvoke([*sys_msgs, *state.messages])
+    try:
+        resp.name = "phase"
+    except Exception:
+        pass
 
-# --- Forge (streaming + handoff) ---
-async def forge(state: State, *, context: Optional[Context] = None, **_):
-    """Execute tools and stream; after real tools, synthesize and handoff."""
-    ctx = context or Context()
+    return {"messages": [resp], "depth": base_depth + 1, "c1_loops": base_pf}
+
+# --- Forge (non-streaming; tools + optional synthesis + handoff) ---
+async def forge(state: State, runtime: Runtime[Context]) -> dict[str, Any]:
+    """Execute real tools. After tool results, synthesize and hand off to Phase."""
     last = state.messages[-1] if state.messages else None
 
-    # Post-tool synthesis path (only for "real" tools)
+    # post-tool synthesis path for real tools
     if isinstance(last, ToolMessage):
         real_tool_names = {"search", "get_time"}
         last_tool = (getattr(last, "name", "") or "").strip()
         if last_tool in real_tool_names:
-            model_id = ctx.forge_model or ctx.model
-            summarizer = load_chat_model(model_id, streaming=True)
+            model_id = runtime.context.forge_model or runtime.context.model
+            summarizer = load_chat_model(model_id)
             sys_msgs = _ls_messages_multi(
-                ctx.forge_prompt_id,
+                runtime.context.forge_prompt_id,
                 system_time=datetime.now(tz=UTC).isoformat(),
-                ai_name=ctx.ai_name,
-                ai_language=ctx.ai_language,
-                ai_role=ctx.ai_role,
+                ai_name=getattr(runtime.context, "ai_name", "AI"),
+                ai_language=getattr(runtime.context, "ai_language", "English"),
+                ai_role=getattr(runtime.context, "ai_role", ""),
             )
-
-            final_text: list[str] = []
-            async for chunk in summarizer.astream([*sys_msgs, *state.messages]):
-                txt = get_message_text(chunk) or ""
-                if txt:
-                    final_text.append(txt)
-                yield {"messages": [chunk], "depth": state.depth + 1, "c1_loops": state.c1_loops}
+            synth = await summarizer.ainvoke([*sys_msgs, *state.messages])
+            content = get_message_text(synth) or ""
 
             handoff_msg = AIMessage(
-                content=("".join(final_text) if final_text else ""),
+                content=content,
                 name="forge",
                 tool_calls=[{"id": f"call_{uuid4().hex}", "name": "handoff_to_phase", "args": {}}],
                 additional_kwargs={"invisible": True, "handoff": True},
             )
-            yield {"messages": [handoff_msg], "depth": state.depth + 1, "c1_loops": state.c1_loops}
-            return
+            return {"messages": [handoff_msg], "depth": state.depth + 1, "c1_loops": state.c1_loops}
 
-    # Normal forge (tools + streaming)
-    model_id = ctx.forge_model or ctx.model
-    model = load_chat_model(model_id, streaming=True).bind_tools(TOOLS)
+    # normal forge
+    model_id = runtime.context.forge_model or runtime.context.model
+    model = load_chat_model(model_id).bind_tools(TOOLS)
 
     sys_msgs = _ls_messages_multi(
-        ctx.forge_prompt_id,
+        runtime.context.forge_prompt_id,
         system_time=datetime.now(tz=UTC).isoformat(),
-        ai_name=ctx.ai_name,
-        ai_language=ctx.ai_language,
-        ai_role=ctx.ai_role,
+        ai_name=getattr(runtime.context, "ai_name", "AI"),
+        ai_language=getattr(runtime.context, "ai_language", "English"),
+        ai_role=getattr(runtime.context, "ai_role", ""),
     )
 
     new_pf = getattr(state, "c1_loops", 0) + 1
+    resp = await model.ainvoke([*sys_msgs, *state.messages])
+    try:
+        resp.name = "forge"
+        resp.additional_kwargs = {**getattr(resp, "additional_kwargs", {}), "invisible": True}
+    except Exception:
+        pass
 
-    async for chunk in model.astream([*sys_msgs, *state.messages]):
-        try:
-            chunk.name = "forge"
-            chunk.additional_kwargs = {**getattr(chunk, "additional_kwargs", {}), "invisible": True}
-        except Exception:
-            pass
-        yield {"messages": [chunk], "depth": state.depth + 1, "c1_loops": new_pf}
+    return {"messages": [resp], "depth": state.depth + 1, "c1_loops": new_pf}
 
 # --- Tool-call inspection (unchanged helpers) ---
 def _iter_tool_call_names(msg: AIMessage) -> Iterable[str]:
