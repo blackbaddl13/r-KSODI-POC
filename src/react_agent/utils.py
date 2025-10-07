@@ -119,12 +119,12 @@ def _strip_message_content(content: Union[str, list, dict]) -> Union[str, list, 
 
 def strip_messages(messages: List[BaseMessage]) -> List[BaseMessage]:
     """Return new messages with stripped headers for System/Human/AI.
-    
+
     ToolMessage and others are left untouched.
     """
     out: List[BaseMessage] = []
     for m in messages:
-        if isinstance(m, (SystemMessage, HumanMessage, AIMessage)):
+        if isinstance(m, (SystemMessage | HumanMessage | AIMessage)):
             new_content = _strip_message_content(m.content)
             out.append(type(m)(
                 content=new_content,
