@@ -103,7 +103,7 @@ We were always convinced that hallucinations are inevitable and AI-Governance sh
 KSODI-Light does not seek to suppress uncertainty – it teaches users and agents how to live with it responsibly.
 The system replaces fragile factuality with reflective resonance. It offers tools, not traps.
 
-*offically confirmed by openAI [(Source)](https://arxiv.org/pdf/2509.04664)
+*officially confirmed by openAI [(Source)](https://arxiv.org/pdf/2509.04664)
 
 ### 🔄 System Roles & Protocols
 
