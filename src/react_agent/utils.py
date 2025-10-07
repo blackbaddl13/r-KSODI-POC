@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: MIT
 """Utility & helper functions."""
 
-from typing import Tuple, Any, List, Union
 import re
+from typing import Any, List, Tuple, Union
 
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 # Use native OpenAI wrapper to ensure usage + streaming.
 try:
@@ -61,10 +61,10 @@ _YAML_FRONTMATTER_RE = re.compile(r"^---\s*\n.*?\n---\s*\n", re.DOTALL)
 
 
 def strip_prompt_header(text: str) -> str:
-    """
-    Remove license/meta header above a cut marker or YAML front matter.
+    """Remove license/meta header above a cut marker or YAML front matter.
+
     Idempotent: safe to call multiple times.
-    """
+    """ 
     if not text:
         return text
 
@@ -118,8 +118,8 @@ def _strip_message_content(content: Union[str, list, dict]) -> Union[str, list, 
 
 
 def strip_messages(messages: List[BaseMessage]) -> List[BaseMessage]:
-    """
-    Return new messages with stripped headers for System/Human/AI.
+    """Return new messages with stripped headers for System/Human/AI.
+    
     ToolMessage and others are left untouched.
     """
     out: List[BaseMessage] = []

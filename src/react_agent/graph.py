@@ -3,15 +3,15 @@
 
 from datetime import UTC, datetime
 from functools import lru_cache
-from typing import Any, Iterable, Literal, Optional
+from typing import Any, Iterable, Literal
 from uuid import uuid4
 
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
+    HumanMessage,
     SystemMessage,
     ToolMessage,
-    HumanMessage,
 )
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode
@@ -20,8 +20,8 @@ from langsmith import Client
 
 from react_agent.context import Context
 from react_agent.state import InputState, State
-from react_agent.tools import DELEGATION_TOOLS_PHASE, DELEGATION_TOOLS_FORGE, TOOLS
-from react_agent.utils import load_chat_model, get_message_text, strip_messages
+from react_agent.tools import DELEGATION_TOOLS_FORGE, DELEGATION_TOOLS_PHASE, TOOLS
+from react_agent.utils import get_message_text, load_chat_model, strip_messages
 
 # Limits (synced from Context at runtime)
 MAX_DEPTH: int = 25
@@ -188,13 +188,14 @@ def _iter_tool_calls(msg: AIMessage) -> Iterable[dict[str, Any]]:
                 args = fn.get("arguments", args) or args
             yield {"id": getattr(tc, "id", None), "name": name, "args": args}
 
-def _get_tool_call(msg: AIMessage, expected: str) -> Optional[dict[str, Any]]:
+def _get_tool_call(msg: AIMessage, expected: str) -> dict[str, Any] | None:
     for tc in _iter_tool_calls(msg):
         if (tc.get("name") or "").strip() == expected:
             return tc
     return None
 
 def resolve_pending(state: State) -> dict[str, Any]:
+    """Resolve pending tool calls by skipping them with a ToolMessage. Otherwise API errors can occur."""
     last = state.messages[-1]
     tool_msgs: list[ToolMessage] = []
     if isinstance(last, AIMessage):
@@ -207,6 +208,7 @@ def resolve_pending(state: State) -> dict[str, Any]:
 
 # --- Routing ---
 def route_phase(state: State) -> Literal["__end__", "delegation_tools_phase", "resolve_pending"]:
+    """Decide next step after Phase."""
     if state.depth >= MAX_DEPTH:
         last = state.messages[-1]
         if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
@@ -223,6 +225,7 @@ def route_phase(state: State) -> Literal["__end__", "delegation_tools_phase", "r
     return "__end__"
 
 def route_forge(state: State) -> Literal["tools", "delegation_tools_forge", "phase", "resolve_pending"]:
+    """Decide next step after Forge."""
     if state.depth >= MAX_DEPTH:
         last = state.messages[-1]
         if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
