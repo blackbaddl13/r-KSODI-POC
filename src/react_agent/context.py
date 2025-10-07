@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Define the configurable parameters for the agent."""
 
 from __future__ import annotations
@@ -33,17 +34,17 @@ class Context:
 
     # LangSmith prompt IDs
     phase_prompt_id: str = field(
-        default="system_prompt_phase:latest",
+        default="blackbaddl13/ksodi_light_ethics:DXB, blackbaddl13/role_definition_phase:DXB, blackbaddl13/glyphs_ksodi_light:DXB, blackbaddl13/interaction_protocol_phase:DXB, blackbaddl13/resonance_saturation_ksodi_light:DXB, blackbaddl13/resonance_role_phase_ksodi_light:DXB, blackbaddl13/personalization_ksodi_light:DXB",
         metadata={"description": "LangSmith prompt handle for Phase."},
     )
     forge_prompt_id: str = field(
-        default="system_prompt_forge:latest",
+        default="blackbaddl13/ksodi_light_ethics:DXB, blackbaddl13/role_definition_forge:DXB, blackbaddl13/glyphs_ksodi_light:DXB, blackbaddl13/interaction_protocol_forge:DXB, blackbaddl13/resonance_saturation_ksodi_light:DXB, blackbaddl13/resonance_role_forge_ksodi_light:DXB, blackbaddl13/personalization_ksodi_light:DXB",
         metadata={"description": "LangSmith prompt handle for Forge."},
     )
 
     # Global default model
     model: Annotated[str, {"__template_metadata__": {"kind": "llm"}}] = field(
-        default="openai/gpt-5",
+        default="openai/gpt-4o-2024-05-13",
         metadata={"description": "The default language model (provider/model-name)."},
     )
 
@@ -60,6 +61,21 @@ class Context:
     max_search_results: int = field(
         default=10,
         metadata={"description": "The maximum number of search results to return for each search query."},
+    )
+
+    # Personalization / Prompt Vars
+    ai_name: str = field(
+        default="AI",
+        metadata={"description": "Name the AI should be called by (used in prompts as {ai_name})."},
+    )
+    ai_language: str = field(
+        default="English",
+        metadata={"description": "Fallback language hint for prompts (used as {ai_language})."},
+    )
+
+    ai_role: str = field(
+        default="",
+        metadata={"description": "Fallback role hint for prompts (used as {ai_role})."},
     )
 
     def __post_init__(self) -> None:

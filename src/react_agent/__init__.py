@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """React Agent.
 
 This module defines a custom reasoning and action agent graph.
