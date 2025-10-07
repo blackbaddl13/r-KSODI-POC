@@ -2,7 +2,7 @@
 """Utility & helper functions."""
 
 import re
-from typing import Any, Type
+from typing import Any, Type, cast
 
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
@@ -16,6 +16,7 @@ try:
 except Exception:
     ChatOpenAI = None
 
+
 def get_message_text(msg: BaseMessage) -> str:
     """Extract text from a BaseMessage, handling various content formats."""
     content = msg.content
@@ -25,8 +26,14 @@ def get_message_text(msg: BaseMessage) -> str:
         return content.get("text", "") or ""
     parts: list[str] = []
     for c in (content or []):
-        parts.append(c if isinstance(c, str) else (c.get("text") or ""))
+        if isinstance(c, str):
+            parts.append(c)
+        elif isinstance(c, dict):
+            parts.append(c.get("text", "") or "")
+        else:
+            parts.append(str(c))
     return "".join(parts).strip()
+
 
 def load_chat_model(fully_specified_name: str, **kwargs: Any) -> BaseChatModel:
     """Load a chat model by name, with optional streaming support."""
@@ -34,11 +41,13 @@ def load_chat_model(fully_specified_name: str, **kwargs: Any) -> BaseChatModel:
     streaming = bool(kwargs.get("streaming", False))
 
     if provider == "openai" and ChatOpenAI is not None:
-        return ChatOpenAI(model=model, stream_usage=True, streaming=streaming)
+        return cast(BaseChatModel, ChatOpenAI(model=model, stream_usage=True, streaming=streaming))
 
-    return init_chat_model(
-        model, model_provider=provider, **{k: v for k, v in kwargs.items() if k != "streaming"}
+    return cast(
+        BaseChatModel,
+        init_chat_model(model, model_provider=provider, **{k: v for k, v in kwargs.items() if k != "streaming"}),
     )
+
 
 def _split_provider_model(name: str) -> tuple[str, str]:
     if "/" in name:
@@ -46,12 +55,16 @@ def _split_provider_model(name: str) -> tuple[str, str]:
         return p.strip(), m.strip()
     return "openai", name.strip()
 
+
+# ---------- Prompt header stripping (for CC BY headers etc.) ----------
+
 _CUT_MARKERS: tuple[str, ...] = (
     '---8<--- CUT HERE (build strips above) ---8<---',
     '---8<---',
     '<!-- CUT HERE -->',
 )
 _YAML_FRONTMATTER_RE = re.compile(r"^---\s*\n.*?\n---\s*\n", re.DOTALL)
+
 
 def strip_prompt_header(text: str) -> str:
     """Strip YAML frontmatter or custom cut markers from a prompt string."""
@@ -72,30 +85,42 @@ def strip_prompt_header(text: str) -> str:
         return text[first_hit_idx + first_hit_len:].lstrip()
     return text
 
+
 def _strip_message_content(
     content: str | list[Any] | dict[str, Any]
-) -> str | list[Any] | dict[str, Any]:
+) -> str | list[str | dict[str, Any]]:
+    """Normalize + strip headers across common LangChain content forms.
+
+    Guarantees: returns either `str` or `list[str | dict[str, Any]]` (no bare dict).
+    """
     if isinstance(content, str):
         return strip_prompt_header(content)
+
     if isinstance(content, dict):
-        if "text" in content and isinstance(content["text"], str):
-            d: dict[str, Any] = dict(content)
+        # normalize single dict → list[dict]
+        d: dict[str, Any] = dict(content)
+        if "text" in d and isinstance(d["text"], str):
             d["text"] = strip_prompt_header(d["text"])
-            return d
-        return content
+        return [d]
+
     if isinstance(content, list):
-        out: list[Any] = []
+        out: list[str | dict[str, Any]] = []
         for part in content:
             if isinstance(part, str):
                 out.append(strip_prompt_header(part))
-            elif isinstance(part, dict) and "text" in part and isinstance(part["text"], str):
+            elif isinstance(part, dict):
                 p: dict[str, Any] = dict(part)
-                p["text"] = strip_prompt_header(p["text"])
+                if "text" in p and isinstance(p["text"], str):
+                    p["text"] = strip_prompt_header(p["text"])
                 out.append(p)
             else:
-                out.append(part)
+                # normalize unknown parts to string to satisfy typing & robustness
+                out.append(str(part))
         return out
-    return content
+
+    # fallback (shouldn't happen): coerce to str
+    return str(content)
+
 
 def strip_messages(messages: list[BaseMessage]) -> list[BaseMessage]:
     """Strip YAML frontmatter or custom cut markers from a list of messages."""
