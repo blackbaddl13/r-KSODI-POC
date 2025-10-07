@@ -36,27 +36,16 @@ Nonetheless, it can be tested as a standalone prototype to validate validate the
 To get the KSODI-Light Agent running locally, follow these basic steps:
 
 ### 🔧 Prerequisites
-
-* Python 3.10 or newer
 * An [OpenAI API Key](https://platform.openai.com/account/api-keys)
 
-  * Export it in your shell or `.env` file as `OPENAI_API_KEY`
+  * Export it in your shell, `.env` file as `OPENAI_API_KEY` or directly set it up in your Langgraph-Studio deployment.
 
 ### 📦 Installation & Run (local)
 
-```bash
-# Clone the repository
-git clone https://github.com/YOUR_ORG/ksodi-light.git
-cd ksodi-light
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Start the agent\python main.py
-```
+> ⚠️ Please note: We do not recommend to run it locally because the lang-graph-studio package is deprecated. However it still can be done until 2026-08-30.
 
 ### 📦 Installation & Run (cloud)
-We use this repository as it is in LangGraphCloud. It can be forked and used as it is. You only need to set up your OpenAI API key in the deployment
+We use this repository as it is in LangGraphCloud. It can be forked and deployed with no modifications. You only need to set up your OpenAI API key within the deployment UI.
 
 <br>
 
