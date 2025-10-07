@@ -31,7 +31,7 @@ _ls = Client()
 
 # --- LangSmith prompt pull + strip (cached) ---
 @lru_cache(maxsize=64)
-def _pull_prompt_cached(prompt_id: str):
+def _pull_prompt_cached(prompt_id: str) -> Any:
     """Cache LangSmith prompt pulls to reduce API latency."""
     return _ls.pull_prompt(prompt_id)
 
@@ -177,16 +177,20 @@ def _iter_tool_calls(msg: AIMessage) -> Iterable[dict[str, Any]]:
     calls = getattr(msg, "tool_calls", None) or []
     for tc in calls:
         if isinstance(tc, dict):
-            yield {"id": tc.get("id"), "name": tc.get("name") or tc.get("tool"),
-                   "args": tc.get("args") or tc.get("function", {}).get("arguments")}
+            yield {
+                "id": tc.get("id"),
+                "name": tc.get("name") or tc.get("tool"),
+                "args": tc.get("args") or tc.get("function", {}).get("arguments"),
+            }
         else:
-            name = getattr(tc, "name", None) or tc.get("tool_name", None)  # type: ignore[attr-defined]
+            name = getattr(tc, "name", None) or getattr(tc, "tool_name", None)
             args: Any = getattr(tc, "args", None) or {}
             fn = getattr(tc, "function", None)
             if isinstance(fn, dict):
                 name = fn.get("name", name)
                 args = fn.get("arguments", args) or args
             yield {"id": getattr(tc, "id", None), "name": name, "args": args}
+
 
 def _get_tool_call(msg: AIMessage, expected: str) -> dict[str, Any] | None:
     for tc in _iter_tool_calls(msg):

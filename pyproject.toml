@@ -68,3 +68,18 @@ dev = [
     "langgraph-cli[inmem]>=0.1.71",
     "pytest>=8.3.5",
 ]
+[tool.mypy]
+strict = true
+[[tool.mypy.overrides]]
+module = [
+  "langchain",
+  "langchain.*",
+  "langchain_core",
+  "langchain_core.*",
+  "langchain_openai",
+  "langgraph.*",
+  "langsmith",
+  "langchain_tavily",
+  "pytest",
+]
+ignore_missing_imports = true
