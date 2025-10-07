@@ -254,6 +254,13 @@ These symbols are visible, explainable, and optional.
 - [ ] Symbolic guide implementation for back-end
 - [ ] Technical Measurements for KSOCI Dimensions as described in [https://github.com/Alkiri-dAraion/KSODI-Methode/blob/main/EN/CSOCI-dimensions-EN_v02.md](https://github.com/Alkiri-dAraion/KSODI-Methode/blob/main/EN/CSOCI-dimensions-EN_v02.md) — The source code of this will not be open sourced but the results will be.
 
+## CI Tests
+
+* pytest
+* ruff
+* mypy
+* codespell
+
 ## License
 
 * Source code: MIT (see LICENSE)
