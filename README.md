@@ -291,7 +291,7 @@ These symbols are visible, explainable, and optional.
 
 In the mean time, if you want a quick, low-friction frontend to test your agent, you can use **n8n**.  
 Drop in the example workflow **n8n.json** and set the variables below — you’ll be chatting in minutes.
-The thread is tied to the browser session so you have persistance in your conversation until you reload or quit.
+The thread is tied to the browser session so you have persistence in your conversation until you reload or quit.
 
 ## Required environment variables
 - `LANGSMITH_DEPLOYMENT_URL` – Base URL for your deployment (no trailing slash if you template paths).
