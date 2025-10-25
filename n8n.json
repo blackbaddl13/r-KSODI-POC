@@ -1,0 +1,588 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "public": "={{ $env.N8N_PUBLIC || false }}",
+        "authentication": "basicAuth",
+        "initialMessages": "Hi there!",
+        "options": {
+          "responseMode": "responseNodes"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1392,
+        -368
+      ],
+      "name": "When chat message received",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "={{ $env.N8N_CRED_ID_HTTPBASIC || \"\" }}",
+          "name": "={{ $env.N8N_HTTP_BASIC_AUTH_NAME || \"HTTP Basic (Chat)\" }}"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.LANGSMITH_DEPLOYMENT_URL }}/threads",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.LANGSMITH_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"metadata\": { \"session_id\": \"{{$json.sessionId}}\" } }\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -496,
+        -272
+      ],
+      "name": "Create Thread"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.LANGSMITH_DEPLOYMENT_URL }}/threads/{{ $json.thread_id }}/runs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.LANGSMITH_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"assistant_id\": \"={{ $env.LANGSMITH_ASSISTANT_ID }}\",\n  \"input\": {\n    \"messages\": [\n      { \"role\": \"user\", \"content\": \"{{ $('Create payload').item.json.input.messages[0].content }}\" }\n    ]\n  },\n  \"metadata\": { \"session_id\": \"{{ $('Create payload').item.json.metadata.session_id }}\" }\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        624,
+        -368
+      ],
+      "name": "Start Run"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"threadId\": \"{{ $json.thread_id }}\",\n  \"runId\": \"{{ $json.run_id }}\",\n  \"delayS\": 1,\n  \"elapsedMs\": 0,\n  \"maxS\": 180\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        848,
+        -368
+      ],
+      "name": "Poll State"
+    },
+    {
+      "parameters": {
+        "amount": "={{ $json.delayMs }}\n"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1072,
+        -368
+      ],
+      "name": "Wait"
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.LANGSMITH_DEPLOYMENT_URL }}/threads/{{ $('Poll State').item.json.threadId }}/runs/{{ $('Poll State').item.json.runId }}\n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.LANGSMITH_API_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1296,
+        -448
+      ],
+      "name": "Get run"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "success",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1520,
+        -368
+      ],
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.LANGSMITH_DEPLOYMENT_URL }}/threads/{{ $('Poll State').item.json.threadId }}/runs/{{ $json.run_id }}/join",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "={{ $env.LANGSMITH_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1744,
+        -368
+      ],
+      "name": "Get Message"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "content",
+              "value": "={{ \n  (\n    (Array.isArray($json.values?.messages) && $json.values.messages)\n    || (Array.isArray($json.messages) && $json.messages)\n    || []\n  ).slice(-1)[0]?.content\n  || (\n    ((Array.isArray($json.values?.messages) && $json.values.messages)\n     || (Array.isArray($json.messages) && $json.messages)\n     || []\n    ).slice(-1)[0]?.text\n  )\n  || (\n    ((Array.isArray($json.values?.messages) && $json.values.messages)\n     || (Array.isArray($json.messages) && $json.messages)\n     || []\n    ).slice(-1)[0]?.value\n  )\n  || \"⟂ Keine Text-Response.\"\n}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1968,
+        -368
+      ],
+      "name": "Set response"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.hasThread }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -720,
+        -368
+      ],
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "threadId",
+              "value": "={{ $node[\"Simple Thread Storage\"].json.threadId }}\n\n",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -48,
+        -464
+      ],
+      "name": "Merge Thread ID"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "threadId",
+              "value": "={{ $node[\"Create Thread\"].json.thread_id }}\n\n",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -48,
+        -272
+      ],
+      "name": "Merge Thread ID1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        176,
+        -368
+      ],
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "message": "={{ $json.content }}",
+        "waitUserReply": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chat",
+      "typeVersion": 1,
+      "position": [
+        2192,
+        -368
+      ],
+      "name": "Respond to Chat"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"input\": {\n    \"messages\": [\n      { \"role\": \"user\", \"content\": \"{{$json.chatInput}}\" }\n    ]\n  },\n  \"metadata\": {\n    \"session_id\": \"{{$json.sessionId}}\",\n    \"user_id\": \"{{$json.userID || ''}}\",\n    \"extra\": \"{{$json.metadata || ''}}\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1168,
+        -368
+      ],
+      "name": "Create payload"
+    },
+    {
+      "parameters": {
+        "jsCode": "const store = $getWorkflowStaticData('global');  \n\nif (!store.sessionToThread) store.sessionToThread = {};\n\nconst sessionId = $input.first().json.metadata.session_id;  \nconst existing = store.sessionToThread[sessionId] || null;\n\nreturn [\n  { json: { sessionId, threadId: existing, hasThread: !!existing } }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -944,
+        -368
+      ],
+      "name": "Simple Thread Storage"
+    },
+    {
+      "parameters": {
+        "jsCode": "const store = $getWorkflowStaticData('global');\nif (!store.sessionToThread) store.sessionToThread = {};\n\nconst sessionId = $('When chat message received').first().json.sessionId;\nconst threadId  = $input.first().json.thread_id; \n\nstore.sessionToThread[sessionId] = threadId;\n\nstore.lastUpdated = new Date().toISOString();\n\nreturn [{ json: { sessionId, threadId } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        -272
+      ],
+      "name": "Simple Thread Storage 2"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "thread_id",
+              "value": "={{ $json.threadId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        400,
+        -368
+      ],
+      "name": "Set thread id"
+    }
+  ],
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Create payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Thread": {
+      "main": [
+        [
+          {
+            "node": "Simple Thread Storage 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start Run": {
+      "main": [
+        [
+          {
+            "node": "Poll State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll State": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Get run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get run": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Get Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Message": {
+      "main": [
+        [
+          {
+            "node": "Set response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Merge Thread ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Thread",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Thread ID": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Thread ID1": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Set thread id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Chat": {
+      "main": [
+        []
+      ]
+    },
+    "Create payload": {
+      "main": [
+        [
+          {
+            "node": "Simple Thread Storage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Thread Storage": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Thread Storage 2": {
+      "main": [
+        [
+          {
+            "node": "Merge Thread ID1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set thread id": {
+      "main": [
+        [
+          {
+            "node": "Start Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "={{ $env.N8N_INSTANCE_ID || \"\" }}"
+  }
+}

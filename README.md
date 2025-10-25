@@ -287,7 +287,32 @@ These symbols are visible, explainable, and optional.
 
 ### Front end interface implementation
 
-* Symbols will be mapped to UI buttons or tooltips.
+* Symbols will be mapped to UI buttons or tooltips within a custom UI.
+
+In the mean time, if you want a quick, low-friction frontend to test your agent, you can use **n8n**.  
+Drop in the example workflow **n8n.json** and set the variables below — you’ll be chatting in minutes.
+The thread is tied to the browser session so you have persistance in your conversation until you reload or quit.
+
+## Required environment variables
+- `LANGSMITH_DEPLOYMENT_URL` – Base URL for your deployment (no trailing slash if you template paths).
+- `LANGSMITH_API_KEY` – API key for LangSmith/LangGraph Cloud.
+- `LANGSMITH_ASSISTANT_ID` – Assistant/Deployment ID used in `Start Run`.
+
+## Optional environment variables
+- `N8N_PUBLIC` – `true`/`false` for the Chat Trigger endpoint exposure (defaults to `false`).
+- `N8N_HTTP_BASIC_AUTH_NAME` – Name of your BasicAuth credential in n8n (select it in the UI).
+- `N8N_CRED_ID_HTTPBASIC` – Internal credential ID (leave empty; prefer selecting by name in UI).
+- `N8N_WEBHOOK_ID_CHAT` – Leave empty; **n8n auto-generates** webhook IDs.
+- `N8N_WEBHOOK_ID_WAIT` – Leave empty; **n8n auto-generates** webhook IDs.
+- `N8N_INSTANCE_ID` – Cosmetic/template meta; safe to leave empty.
+
+## Where they are used (only nodes that need your values)
+- **When chat message received (Chat Trigger)** → `N8N_PUBLIC`, `N8N_HTTP_BASIC_AUTH_NAME` (pick credential in UI).
+- **Create Thread (HTTP Request)** → `LANGSMITH_DEPLOYMENT_URL`, `LANGSMITH_API_KEY`.
+- **Start Run (HTTP Request)** → `LANGSMITH_DEPLOYMENT_URL`, `LANGSMITH_API_KEY`, `LANGSMITH_ASSISTANT_ID`.
+- **Get run / Get Message (HTTP Request)** → `LANGSMITH_DEPLOYMENT_URL`, `LANGSMITH_API_KEY`.
+
+> Note: Webhook IDs are created by n8n automatically on import/deploy. Keep the fields empty or remove them.
 
 ### Backend interface implementation
 
@@ -301,7 +326,7 @@ These symbols are visible, explainable, and optional.
 - [x] Coding langgraph agent prototype
 - [x] Manual Testing
 - [x] Setting up evaluations and experiments
-- [ ] Publish sanitized n8n workflow for demo reasons
+- [x] Publish sanitized n8n workflow for demo reasons
 - [ ] Final testing and validation
 - [ ] Publishing test results
 - [ ] Moving to Assistant API — this is a prototype, too expensive still
